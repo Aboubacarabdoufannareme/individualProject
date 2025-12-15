@@ -16,11 +16,7 @@ $error_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['document'])) {
     $type = $_POST['type'];
 
-    // Create uploads directory if not exists
     $upload_dir = 'uploads/';
-    if (!file_exists($upload_dir)) {
-        mkdir($upload_dir, 0777, true);
-    }
 
     $result = upload_file($_FILES['document'], $upload_dir);
 
