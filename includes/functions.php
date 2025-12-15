@@ -96,7 +96,7 @@ function require_login()
  * Upload a file
  * returns path on success or false on failure
  */
-function upload_file($file, $destination_folder = 'uploads/')
+function upload_file($file, $destination_folder = '../uploads/')
 {
     // Allowed extensions
     $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
