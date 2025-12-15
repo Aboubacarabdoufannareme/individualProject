@@ -96,7 +96,7 @@ function require_login()
  * Upload a file
  * returns path on success or false on failure
  */
-function upload_file($file, $destination_folder = '../uploads/')
+function upload_file($file, $destination_folder = 'uploads/')
 {
     // Allowed extensions
     $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
@@ -121,15 +121,18 @@ function upload_file($file, $destination_folder = '../uploads/')
     $project_root = dirname(__DIR__);
 
     // Ensure destination folder is clean (no leading/trailing slashes for consistency)
-    $clean_folder = trim($destination_folder, '/');
+    // Security: Remove any ".." to prevent traversal outside project root
+    $clean_folder = trim(str_replace('..', '', $destination_folder), '/');
 
     // Full absolute path to upload directory
     $upload_dir = $project_root . '/' . $clean_folder . '/';
 
     // Create directory if not exists
     if (!is_dir($upload_dir)) {
-        if (!mkdir($upload_dir, 777, true)) {
-            return ["error" => "Failed to create upload directory: $clean_folder. Check permissions."];
+        // Try 0777 (Octal) - Required for many shared hosts
+        // Warning: This might still fail if server blocks mkdir() commands
+        if (!mkdir($upload_dir, 0777, true)) {
+            return ["error" => "Failed to create directory: $clean_folder. Please create it manually via cPanel/FTP with 777 permissions."];
         }
     }
 
@@ -138,7 +141,8 @@ function upload_file($file, $destination_folder = '../uploads/')
     if (move_uploaded_file($filetmp, $destination)) {
         return ["success" => true, "path" => $new_name];
     } else {
-        return ["error" => "Failed to move uploaded file. Check folder permissions."];
+        $error = error_get_last();
+        return ["error" => "Upload failed (move_uploaded_file). Check folder permissions. Error: " . ($error['message'] ?? 'Unknown')];
     }
 }
 
