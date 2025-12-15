@@ -128,7 +128,7 @@ function upload_file($file, $destination_folder = 'uploads/')
 
     // Create directory if not exists
     if (!is_dir($upload_dir)) {
-        if (!mkdir($upload_dir, 0755, true)) {
+        if (!mkdir($upload_dir, 777, true)) {
             return ["error" => "Failed to create upload directory: $clean_folder. Check permissions."];
         }
     }
