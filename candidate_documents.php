@@ -1,8 +1,4 @@
 <?php
-// Turn on full error reporting for debugging
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
 // candidate_documents.php - DATABASE STORAGE VERSION
 require_once 'includes/header.php';
 require_login();
@@ -75,24 +71,10 @@ $stmt = $conn->prepare("SELECT id, type, original_name, file_size, uploaded_at F
 $stmt->execute([$user_id]);
 $documents = $stmt->fetchAll();
 
-// Fetch Profile for sidebar
-<!-- Sidebar -->
-<aside>
-    <div class="card">
-        <div class="text-center mb-2">
-            <?php
-            $photo_url = get_profile_picture_url($user_id, $conn);
-            ?>
-            <img src="<?php echo $photo_url; ?>" alt="Profile"
-                style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem;">
-            <h4><?php echo sanitize($user['full_name']); ?></h4>
-            <p style="color: var(--text-muted);"><?php echo sanitize($user['title'] ?: 'Job Seeker'); ?></p>
-        </div>
-        <!-- ... rest of sidebar ... -->
-    </div>
-</aside>
-
-
+// Fetch Profile for sidebar - CRITICAL: This line was missing!
+$stmt = $conn->prepare("SELECT * FROM candidates WHERE id = ?");
+$stmt->execute([$user_id]);
+$user = $stmt->fetch();
 ?>
 
 <!DOCTYPE html>
@@ -127,6 +109,22 @@ $documents = $stmt->fetchAll();
             font-size: 0.8em;
             margin-left: 10px;
         }
+        .visibility-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+            margin-top: 5px;
+        }
+        .visible-badge {
+            background: #d4edda;
+            color: #155724;
+        }
+        .hidden-badge {
+            background: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
 <body>
@@ -134,36 +132,57 @@ $documents = $stmt->fetchAll();
     <div class="row" style="display: grid; grid-template-columns: 250px 1fr; gap: 2rem;">
         <!-- Sidebar -->
         <aside>
-            <div class="card">
-                <div class="text-center mb-2">
+            <div class="card" style="position: sticky; top: 20px;">
+                <div class="text-center mb-3">
                     <?php
-                    $photo_url = "https://ui-avatars.com/api/?name=" . urlencode($user['full_name']) . "&background=0ea5e9&color=fff";
-                    if (isset($user['profile_picture']) && $user['profile_picture']) {
-                        $photo_url = 'uploads/photos/' . $user['profile_picture'];
-                    }
+                    // FIXED: Use the correct function
+                    $photo_url = get_profile_picture_url($user_id, $conn);
                     ?>
                     <img src="<?php echo $photo_url; ?>" alt="Profile"
-                        style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem;">
-                    <h4><?php echo sanitize($user['full_name']); ?></h4>
-                    <p style="color: var(--text-muted);"><?php echo sanitize($user['title'] ?: 'Job Seeker'); ?></p>
+                        style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem; border: 3px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo htmlspecialchars($user['full_name']); ?></h4>
+                    <p style="color: #666; font-size: 0.9em;">
+                        <?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>
+                    </p>
+                    <div class="visibility-badge <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? 'visible-badge' : 'hidden-badge'; ?>">
+                        <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? '👁️ Visible' : '👻 Hidden'; ?>
+                    </div>
                 </div>
                 <ul style="list-style: none; padding: 0;">
-                    <li style="margin-bottom: 0.5rem;"><a href="candidate_dashboard.php"
-                            style="color: var(--text-main); text-decoration: none; display: block; padding: 8px; border-radius: 5px;"
-                            onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">📊 Dashboard</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="candidate_profile.php"
-                            style="color: var(--text-main); text-decoration: none; display: block; padding: 8px; border-radius: 5px;"
-                            onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">👤 My Profile</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="candidate_documents.php"
-                            style="color: var(--primary); font-weight: 600; text-decoration: none; display: block; padding: 8px; border-radius: 5px; background-color: #e7f3ff;"
-                            onmouseover="this.style.backgroundColor='#d9ebff'" onmouseout="this.style.backgroundColor='#e7f3ff'">📁 My Documents</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="candidate_cv_builder.php"
-                            style="color: var(--text-main); text-decoration: none; display: block; padding: 8px; border-radius: 5px;"
-                            onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">✏️ CV Builder</a></li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="candidate_dashboard.php"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
+                           📊 Dashboard
+                        </a>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="candidate_profile.php"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
+                           👤 My Profile
+                        </a>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="candidate_documents.php"
+                           style="color: #007bff; font-weight: 600; text-decoration: none; display: block; padding: 10px; border-radius: 5px; background-color: #e7f3ff;"
+                           onmouseover="this.style.backgroundColor='#d9ebff'" onmouseout="this.style.backgroundColor='#e7f3ff'">
+                           📁 My Documents
+                        </a>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="candidate_cv_builder.php"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
+                           ✏️ CV Builder
+                        </a>
+                    </li>
                     <li style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
                         <a href="logout.php"
-                            style="color: var(--danger); text-decoration: none; display: block; padding: 8px; border-radius: 5px;"
-                            onmouseover="this.style.backgroundColor='#ffe6e6'" onmouseout="this.style.backgroundColor='transparent'">🚪 Logout</a>
+                           style="color: #dc3545; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#ffe6e6'" onmouseout="this.style.backgroundColor='transparent'">
+                           🚪 Logout
+                        </a>
                     </li>
                 </ul>
             </div>
@@ -172,16 +191,21 @@ $documents = $stmt->fetchAll();
         <!-- Main Content -->
         <main>
             <div class="card mb-4">
-                <h2 class="mb-3">Upload Document</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="margin: 0; font-size: 1.5rem;">Upload Document</h2>
+                    <a href="candidate_dashboard.php" class="btn btn-outline" style="text-decoration: none; padding: 8px 16px; border: 1px solid #ddd; border-radius: 5px;">
+                        ← Back to Dashboard
+                    </a>
+                </div>
 
                 <?php if ($success_msg): ?>
-                    <div class="alert alert-success" style="padding: 12px; background: #d4edda; color: #155724; border-radius: 5px; margin-bottom: 15px;">
-                        <?php echo $success_msg; ?>
+                    <div class="alert alert-success" style="padding: 12px; background: #d4edda; color: #155724; border-radius: 5px; margin-bottom: 20px;">
+                        ✅ <?php echo $success_msg; ?>
                     </div>
                 <?php endif; ?>
                 <?php if ($error_msg): ?>
-                    <div class="alert alert-error" style="padding: 12px; background: #f8d7da; color: #721c24; border-radius: 5px; margin-bottom: 15px;">
-                        <?php echo $error_msg; ?>
+                    <div class="alert alert-error" style="padding: 12px; background: #f8d7da; color: #721c24; border-radius: 5px; margin-bottom: 20px;">
+                        ❌ <?php echo $error_msg; ?>
                     </div>
                 <?php endif; ?>
 
@@ -214,12 +238,19 @@ $documents = $stmt->fetchAll();
             </div>
 
             <div class="card">
-                <h3 style="margin-bottom: 20px;">📁 My Documents</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0;">📁 My Documents</h3>
+                    <?php if (count($documents) > 0): ?>
+                    <span style="background: #007bff; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.9em;">
+                        Total: <?php echo count($documents); ?>
+                    </span>
+                    <?php endif; ?>
+                </div>
                 
                 <?php if (count($documents) > 0): ?>
                     <div style="border: 1px solid #e9ecef; border-radius: 5px; overflow: hidden;">
                         <?php foreach ($documents as $doc): ?>
-                            <div class="document-item">
+                            <div class="document-item" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
                                 <div class="document-info">
                                     <div style="font-weight: 600; font-size: 1.1em; margin-bottom: 5px;">
                                         <?php echo htmlspecialchars($doc['original_name']); ?>
@@ -239,7 +270,7 @@ $documents = $stmt->fetchAll();
                                     <a href="candidate_documents.php?delete=<?php echo $doc['id']; ?>"
                                        class="btn btn-outline"
                                        style="text-decoration: none; padding: 6px 12px; border: 1px solid #dc3545; color: #dc3545; border-radius: 4px; font-size: 0.9em;"
-                                       onclick="return confirm('Are you sure you want to delete <?php echo htmlspecialchars($doc['original_name']); ?>?');">
+                                       onclick="return confirm('Are you sure you want to delete <?php echo htmlspecialchars(addslashes($doc['original_name'])); ?>?');">
                                         🗑️ Delete
                                     </a>
                                 </div>
@@ -251,6 +282,11 @@ $documents = $stmt->fetchAll();
                         <div style="font-size: 3em; margin-bottom: 10px;">📂</div>
                         <h4 style="margin-bottom: 10px;">No Documents Yet</h4>
                         <p>Upload your first document using the form above.</p>
+                        <div style="margin-top: 20px;">
+                            <a href="#upload" class="btn btn-primary" style="text-decoration: none; padding: 10px 20px; background: #007bff; color: white; border-radius: 5px;">
+                                📤 Upload Your First Document
+                            </a>
+                        </div>
                     </div>
                 <?php endif; ?>
             </div>
@@ -269,6 +305,11 @@ function format_file_size($bytes) {
         return $bytes . ' bytes';
     }
 }
+
+// Remove error display in production
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(0);
 
 require_once 'includes/footer.php'; 
 ?>
