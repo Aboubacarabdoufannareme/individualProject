@@ -1,5 +1,5 @@
 <?php
-// candidate_profile.php - FIXED VERSION
+// candidate_profile.php - FIXED VERSION (No updated_at column)
 require_once 'includes/header.php';
 require_login();
 
@@ -17,7 +17,7 @@ $user_id = $_SESSION['user_id'];
 $success_msg = '';
 $error_msg = '';
 
-// Self-healing: Add missing columns if needed
+// Add missing columns to candidates table if needed
 $self_healing_queries = [
     'visibility' => "ALTER TABLE candidates ADD COLUMN visibility ENUM('visible', 'hidden') DEFAULT 'visible' AFTER skills",
     'profile_picture' => "ALTER TABLE candidates ADD COLUMN profile_picture VARCHAR(255) DEFAULT NULL AFTER email",
@@ -70,7 +70,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $profile_picture = $user['profile_picture'] ?? null;
     
     if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] == 0) {
-        // IMPORTANT: Use database storage method for profile pictures too
         $allowed = ['jpg', 'jpeg', 'png', 'gif'];
         $filename = $_FILES['profile_picture']['name'];
         $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
@@ -83,7 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Generate unique filename
                     $new_name = 'profile_' . $user_id . '_' . time() . '.' . $ext;
                     
-                    // Store in database (create a separate table or use existing documents table)
                     try {
                         // Store in documents table with type 'profile_pic'
                         $stmt = $conn->prepare("INSERT INTO documents (candidate_id, type, file_path, original_name, file_content, file_size, mime_type) 
@@ -100,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // Update profile picture reference
                         $profile_picture = $new_name;
                     } catch (PDOException $e) {
-                        // If documents table doesn't exist or fails, use base64 encoding in candidate table
+                        // If documents table insert fails, use base64 encoding
                         $profile_picture = 'data:' . $_FILES['profile_picture']['type'] . ';base64,' . base64_encode($file_content);
                     }
                 } else {
@@ -116,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($error_msg)) {
         try {
-            // Update all profile fields including profile_picture
+            // CORRECTED: Removed updated_at from the query
             $stmt = $conn->prepare("
                 UPDATE candidates 
                 SET full_name = ?, 
@@ -126,8 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     education_level = ?, 
                     skills = ?, 
                     visibility = ?, 
-                    profile_picture = ?,
-                    updated_at = NOW()
+                    profile_picture = ?
                 WHERE id = ?
             ");
             
@@ -182,7 +179,7 @@ function get_profile_picture_url($user, $conn = null) {
             }
         }
         
-        // Try to find the file
+        // Try to find the file in filesystem (fallback)
         $possible_paths = [
             'uploads/photos/' . $user['profile_picture'],
             'uploads/' . $user['profile_picture'],
@@ -196,8 +193,9 @@ function get_profile_picture_url($user, $conn = null) {
         }
     }
     
-    // Default avatar
-    return "https://ui-avatars.com/api/?name=" . urlencode($user['full_name'] ?? 'User') . "&background=0ea5e9&color=fff&size=128";
+    // Default avatar using UI Avatars
+    $name = urlencode($user['full_name'] ?? 'User');
+    return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
 }
 ?>
 
@@ -232,6 +230,22 @@ function get_profile_picture_url($user, $conn = null) {
             content: " *";
             color: #dc3545;
         }
+        .visibility-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+            margin-top: 5px;
+        }
+        .visible-badge {
+            background: #d4edda;
+            color: #155724;
+        }
+        .hidden-badge {
+            background: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
 <body>
@@ -243,49 +257,46 @@ function get_profile_picture_url($user, $conn = null) {
                 <div class="text-center mb-3">
                     <img src="<?php echo get_profile_picture_url($user, $conn); ?>" 
                          alt="Profile" class="profile-preview" id="profilePreview">
-                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo sanitize($user['full_name'] ?? 'User'); ?></h4>
-                    <p style="color: var(--text-muted); font-size: 0.9em;">
-                        <?php echo sanitize($user['title'] ?? 'Job Seeker'); ?>
+                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo htmlspecialchars($user['full_name'] ?? 'User'); ?></h4>
+                    <p style="color: #666; font-size: 0.9em;">
+                        <?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>
                     </p>
-                    <div style="font-size: 0.8em; color: #666; margin-top: 0.5rem;">
-                        <span style="background: <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? '#d4edda' : '#f8d7da'; ?>; 
-                              padding: 2px 8px; border-radius: 12px;">
-                            <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? '👁️ Visible' : '👻 Hidden'; ?>
-                        </span>
+                    <div class="visibility-badge <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? 'visible-badge' : 'hidden-badge'; ?>">
+                        <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? '👁️ Visible' : '👻 Hidden'; ?>
                     </div>
                 </div>
                 <ul style="list-style: none; padding: 0;">
                     <li style="margin-bottom: 0.5rem;">
                         <a href="candidate_dashboard.php"
-                           style="color: var(--text-main); text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
                            onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
                            📊 Dashboard
                         </a>
                     </li>
                     <li style="margin-bottom: 0.5rem;">
                         <a href="candidate_profile.php"
-                           style="color: var(--primary); font-weight: 600; text-decoration: none; display: block; padding: 10px; border-radius: 5px; background-color: #e7f3ff;"
+                           style="color: #007bff; font-weight: 600; text-decoration: none; display: block; padding: 10px; border-radius: 5px; background-color: #e7f3ff;"
                            onmouseover="this.style.backgroundColor='#d9ebff'" onmouseout="this.style.backgroundColor='#e7f3ff'">
                            👤 My Profile
                         </a>
                     </li>
                     <li style="margin-bottom: 0.5rem;">
                         <a href="candidate_documents.php"
-                           style="color: var(--text-main); text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
                            onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
                            📁 My Documents
                         </a>
                     </li>
                     <li style="margin-bottom: 0.5rem;">
                         <a href="candidate_cv_builder.php"
-                           style="color: var(--text-main); text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
                            onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
                            ✏️ CV Builder
                         </a>
                     </li>
                     <li style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
                         <a href="logout.php"
-                           style="color: var(--danger); text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           style="color: #dc3545; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
                            onmouseover="this.style.backgroundColor='#ffe6e6'" onmouseout="this.style.backgroundColor='transparent'">
                            🚪 Logout
                         </a>
@@ -299,7 +310,7 @@ function get_profile_picture_url($user, $conn = null) {
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                     <h1 style="margin: 0; font-size: 1.8rem;">Edit Profile</h1>
-                    <a href="candidate_dashboard.php" class="btn btn-outline" style="text-decoration: none;">
+                    <a href="candidate_dashboard.php" class="btn btn-outline" style="text-decoration: none; padding: 8px 16px; border: 1px solid #ddd; border-radius: 5px;">
                         ← Back to Dashboard
                     </a>
                 </div>
@@ -320,45 +331,46 @@ function get_profile_picture_url($user, $conn = null) {
                     
                     <!-- Profile Picture & Visibility Section -->
                     <div class="form-section">
-                        <h3 style="margin-top: 0; color: #333;">Profile Identity</h3>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Profile Identity</h3>
                         
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1rem;">
                             <!-- Profile Picture -->
                             <div>
-                                <label class="form-label required">Profile Picture</label>
-                                <div style="margin-bottom: 1rem;">
+                                <label class="form-label" style="font-weight: 500;">Profile Picture</label>
+                                <div style="margin-bottom: 1rem; text-align: center;">
                                     <img src="<?php echo get_profile_picture_url($user, $conn); ?>" 
-                                         alt="Current" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin-bottom: 10px;">
+                                         alt="Current" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 3px solid #ddd;">
                                 </div>
                                 <input type="file" name="profile_picture" id="profilePictureInput" 
-                                       accept="image/*" class="form-control"
-                                       onchange="previewImage(this)">
+                                       accept="image/*" class="form-control" style="padding: 8px;">
                                 <div class="upload-hint">Max 2MB. JPG, PNG, or GIF recommended.</div>
                             </div>
                             
                             <!-- Visibility -->
                             <div>
-                                <label class="form-label required">Profile Visibility</label>
+                                <label class="form-label" style="font-weight: 500;">Profile Visibility</label>
                                 <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #ddd;">
                                     <div style="margin-bottom: 1rem;">
-                                        <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; padding: 8px; border-radius: 6px;"
-                                               onmouseover="this.style.backgroundColor='#f0f9ff'" onmouseout="this.style.backgroundColor='transparent'">
+                                        <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid #e2e8f0;"
+                                               onmouseover="this.style.borderColor='#007bff'" onmouseout="this.style.borderColor='#e2e8f0'">
                                             <input type="radio" name="visibility" value="visible" 
-                                                   <?php echo (!isset($user['visibility']) || $user['visibility'] === 'visible') ? 'checked' : ''; ?>>
+                                                   <?php echo (!isset($user['visibility']) || $user['visibility'] === 'visible') ? 'checked' : ''; ?>
+                                                   style="margin-top: 3px;">
                                             <div>
-                                                <div style="font-weight: 500;">👁️ Visible to Employers</div>
-                                                <div style="font-size: 0.85em; color: #666;">Your profile can be found in search results</div>
+                                                <div style="font-weight: 600; color: #155724;">👁️ Visible to Employers</div>
+                                                <div style="font-size: 0.9em; color: #666; margin-top: 5px;">Your profile can be found in search results and viewed by employers</div>
                                             </div>
                                         </label>
                                     </div>
                                     <div>
-                                        <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; padding: 8px; border-radius: 6px;"
-                                               onmouseover="this.style.backgroundColor='#f0f9ff'" onmouseout="this.style.backgroundColor='transparent'">
+                                        <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer; padding: 12px; border-radius: 8px; border: 2px solid #e2e8f0;"
+                                               onmouseover="this.style.borderColor='#007bff'" onmouseout="this.style.borderColor='#e2e8f0'">
                                             <input type="radio" name="visibility" value="hidden" 
-                                                   <?php echo (isset($user['visibility']) && $user['visibility'] === 'hidden') ? 'checked' : ''; ?>>
+                                                   <?php echo (isset($user['visibility']) && $user['visibility'] === 'hidden') ? 'checked' : ''; ?>
+                                                   style="margin-top: 3px;">
                                             <div>
-                                                <div style="font-weight: 500;">👻 Hidden</div>
-                                                <div style="font-size: 0.85em; color: #666;">Only visible to you</div>
+                                                <div style="font-weight: 600; color: #721c24;">👻 Hidden (Private)</div>
+                                                <div style="font-size: 0.9em; color: #666; margin-top: 5px;">Only visible to you. Employers cannot find your profile</div>
                                             </div>
                                         </label>
                                     </div>
@@ -369,35 +381,35 @@ function get_profile_picture_url($user, $conn = null) {
 
                     <!-- Personal Information -->
                     <div class="form-section">
-                        <h3 style="margin-top: 0; color: #333;">Personal Information</h3>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #28a745; padding-bottom: 10px;">Personal Information</h3>
                         
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem;">
                             <div class="form-group">
-                                <label class="form-label required">Full Name</label>
-                                <input type="text" name="full_name" class="form-control"
-                                    value="<?php echo sanitize($user['full_name'] ?? ''); ?>" required
+                                <label class="form-label" style="font-weight: 500;">Full Name *</label>
+                                <input type="text" name="full_name" class="form-control" style="padding: 10px;"
+                                    value="<?php echo htmlspecialchars($user['full_name'] ?? ''); ?>" required
                                     placeholder="Your full name">
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label required">Professional Title</label>
-                                <input type="text" name="title" class="form-control"
-                                    value="<?php echo sanitize($user['title'] ?? 'Job Seeker'); ?>" required
+                                <label class="form-label" style="font-weight: 500;">Professional Title *</label>
+                                <input type="text" name="title" class="form-control" style="padding: 10px;"
+                                    value="<?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>" required
                                     placeholder="e.g. Software Engineer, Marketing Specialist">
                             </div>
                         </div>
                         
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;">
                             <div class="form-group">
-                                <label class="form-label">Phone Number</label>
-                                <input type="tel" name="phone" class="form-control"
-                                    value="<?php echo sanitize($user['phone'] ?? ''); ?>"
+                                <label class="form-label" style="font-weight: 500;">Phone Number</label>
+                                <input type="tel" name="phone" class="form-control" style="padding: 10px;"
+                                    value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>"
                                     placeholder="+227 XX XX XX XX">
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label">Education Level</label>
-                                <select name="education_level" class="form-control">
+                                <label class="form-label" style="font-weight: 500;">Education Level</label>
+                                <select name="education_level" class="form-control" style="padding: 10px; height: auto;">
                                     <option value="">Select Level</option>
                                     <option value="High School" <?php echo ($user['education_level'] ?? '') == 'High School' ? 'selected' : ''; ?>>High School</option>
                                     <option value="Bachelor" <?php echo ($user['education_level'] ?? '') == 'Bachelor' ? 'selected' : ''; ?>>Bachelor's Degree</option>
@@ -411,38 +423,38 @@ function get_profile_picture_url($user, $conn = null) {
 
                     <!-- Skills Section -->
                     <div class="form-section">
-                        <h3 style="margin-top: 0; color: #333;">Skills & Expertise</h3>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #fd7e14; padding-bottom: 10px;">Skills & Expertise</h3>
                         
-                        <div class="form-group">
-                            <label class="form-label">Skills (comma separated)</label>
-                            <input type="text" name="skills" class="form-control"
-                                value="<?php echo sanitize($user['skills'] ?? ''); ?>"
+                        <div class="form-group" style="margin-top: 1rem;">
+                            <label class="form-label" style="font-weight: 500;">Skills (comma separated)</label>
+                            <input type="text" name="skills" class="form-control" style="padding: 10px;"
+                                value="<?php echo htmlspecialchars($user['skills'] ?? ''); ?>"
                                 placeholder="e.g. PHP, MySQL, JavaScript, React, Project Management">
-                            <div class="upload-hint">Separate each skill with a comma</div>
+                            <div class="upload-hint">Separate each skill with a comma. Example: "PHP, JavaScript, MySQL, Project Management"</div>
                         </div>
                     </div>
 
                     <!-- Bio Section -->
                     <div class="form-section">
-                        <h3 style="margin-top: 0; color: #333;">Professional Summary</h3>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #6f42c1; padding-bottom: 10px;">Professional Summary</h3>
                         
-                        <div class="form-group">
-                            <label class="form-label">Bio / Professional Summary</label>
-                            <textarea name="bio" class="form-control" rows="6"
-                                placeholder="Tell employers about your experience, achievements, and career goals..."><?php echo sanitize($user['bio'] ?? ''); ?></textarea>
-                            <div class="upload-hint">Recommended: 150-300 words highlighting your key achievements</div>
+                        <div class="form-group" style="margin-top: 1rem;">
+                            <label class="form-label" style="font-weight: 500;">Bio / Professional Summary</label>
+                            <textarea name="bio" class="form-control" rows="6" style="padding: 10px;"
+                                placeholder="Tell employers about your experience, achievements, and career goals..."><?php echo htmlspecialchars($user['bio'] ?? ''); ?></textarea>
+                            <div class="upload-hint">Recommended: 150-300 words highlighting your key achievements and experience.</div>
                         </div>
                     </div>
 
                     <!-- Form Actions -->
                     <div style="display: flex; gap: 1rem; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0;">
-                        <button type="submit" class="btn btn-primary" style="padding: 12px 24px; font-weight: 500;">
+                        <button type="submit" class="btn btn-primary" style="padding: 12px 24px; font-weight: 500; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
                             💾 Save Profile Changes
                         </button>
-                        <button type="reset" class="btn btn-outline" style="padding: 12px 24px;">
+                        <button type="reset" class="btn btn-outline" style="padding: 12px 24px; background: white; border: 1px solid #ddd; border-radius: 5px; cursor: pointer;">
                             ↩️ Reset Changes
                         </button>
-                        <a href="candidate_dashboard.php" class="btn btn-outline" style="padding: 12px 24px; text-decoration: none;">
+                        <a href="candidate_dashboard.php" class="btn btn-outline" style="padding: 12px 24px; text-decoration: none; background: white; border: 1px solid #ddd; border-radius: 5px;">
                             ❌ Cancel
                         </a>
                     </div>
@@ -458,8 +470,9 @@ function previewImage(input) {
     if (input.files && input.files[0]) {
         const reader = new FileReader();
         reader.onload = function(e) {
+            // Update sidebar preview
             document.getElementById('profilePreview').src = e.target.result;
-            // Also update the preview in the form
+            // Update form preview
             const formPreview = input.previousElementSibling.querySelector('img');
             if (formPreview) {
                 formPreview.src = e.target.result;
@@ -469,6 +482,11 @@ function previewImage(input) {
     }
 }
 
+// Add event listener for file input
+document.getElementById('profilePictureInput').addEventListener('change', function() {
+    previewImage(this);
+});
+
 // Form validation
 document.getElementById('profileForm').addEventListener('submit', function(e) {
     const fullName = this.querySelector('input[name="full_name"]').value.trim();
@@ -476,7 +494,7 @@ document.getElementById('profileForm').addEventListener('submit', function(e) {
     
     if (!fullName || !title) {
         e.preventDefault();
-        alert('Please fill in all required fields (marked with *)');
+        alert('Please fill in all required fields (Full Name and Professional Title)');
         return false;
     }
     
@@ -490,6 +508,8 @@ document.getElementById('profileForm').addEventListener('submit', function(e) {
             return false;
         }
     }
+    
+    return true;
 });
 </script>
 
