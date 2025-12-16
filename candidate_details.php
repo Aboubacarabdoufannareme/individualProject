@@ -42,21 +42,7 @@ $documents = $stmt->fetchAll();
         <div class="row" style="display: grid; grid-template-columns: 200px 1fr; gap: 2rem;">
             <div class="text-center">
     <?php 
-    // Get profile picture for the candidate being viewed
-    $photo_url = "https://ui-avatars.com/api/?name=" . urlencode($candidate['full_name']) . "&background=0ea5e9&color=fff&size=200";
-    
-    // Try to get from database
-    if (!empty($candidate['profile_picture'])) {
-        $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
-                                WHERE candidate_id = ? AND file_path = ? AND type = 'profile_pic' 
-                                ORDER BY uploaded_at DESC LIMIT 1");
-        $stmt->execute([$candidate['id'], $candidate['profile_picture']]);
-        $result = $stmt->fetch();
-        
-        if ($result && !empty($result['file_content'])) {
-            $photo_url = 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
-        }
-    }
+    $photo_url = get_profile_picture_url($candidate['id'], $conn);
     ?>
     <img src="<?php echo $photo_url; ?>"
         alt="Profile" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem; border: 4px solid #fff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
