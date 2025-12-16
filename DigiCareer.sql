@@ -69,15 +69,25 @@ CREATE TABLE applications (
 );
 
 -- Documents Table (CVs, Diplomas)
+-- Drop old table if exists
+DROP TABLE IF EXISTS documents;
+
+-- Create new table with BLOB storage
 CREATE TABLE documents (
     id INT AUTO_INCREMENT PRIMARY KEY,
     candidate_id INT NOT NULL,
     type ENUM('cv', 'diploma', 'certificate', 'cover_letter') NOT NULL,
-    file_path VARCHAR(255) NOT NULL,
+    file_path VARCHAR(255) NOT NULL,  -- Original filename for reference
     original_name VARCHAR(255) NOT NULL,
+    file_content LONGBLOB,  -- Stores actual file data
+    file_size INT,
+    mime_type VARCHAR(100),
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
 );
+
+-- Optional: Add index for faster lookups
+CREATE INDEX idx_candidate_id ON documents(candidate_id);
 
 -- Insert dummy data for testing
 INSERT INTO employers (username, password, company_name, email, description) VALUES 
