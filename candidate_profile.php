@@ -1,9 +1,5 @@
 <?php
-// Turn on full error reporting for debugging
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-// candidate_profile.php - SIMPLIFIED WORKING VERSION
+// candidate_profile.php - FIXED VERSION
 require_once 'includes/header.php';
 require_login();
 
@@ -31,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $skills = sanitize($_POST['skills'] ?? ($user['skills'] ?? ''));
     $visibility = sanitize($_POST['visibility'] ?? ($user['visibility'] ?? 'visible'));
     
-    // Handle Profile Picture - SIMPLE DATABASE APPROACH
+    // Handle Profile Picture
     $profile_picture_filename = $user['profile_picture'] ?? null;
     
     if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] == 0) {
@@ -133,31 +129,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-
-/* // Get profile picture URL
-function get_profile_picture_url($user, $conn = null) {
-    if (!empty($user['profile_picture']) && $conn) {
-        try {
-            // Get from documents table
-            $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
-                                    WHERE candidate_id = ? AND file_path = ? AND type = 'profile_pic' 
-                                    LIMIT 1");
-            $stmt->execute([$user['id'], $user['profile_picture']]);
-            $result = $stmt->fetch();
-            
-            if ($result && !empty($result['file_content'])) {
-                return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
-            }
-        } catch (PDOException $e) {
-            // Continue to default
-        }
-    }
-    
-    // Default avatar
-    $name = urlencode($user['full_name'] ?? 'User');
-    return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
-}
-**/
 ?>
 
 <!DOCTYPE html>
@@ -188,6 +159,22 @@ function get_profile_picture_url($user, $conn = null) {
             flex-direction: column;
             align-items: center;
         }
+        .visibility-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+            margin-top: 5px;
+        }
+        .visible-badge {
+            background: #d4edda;
+            color: #155724;
+        }
+        .hidden-badge {
+            background: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
 <body>
@@ -197,12 +184,19 @@ function get_profile_picture_url($user, $conn = null) {
         <aside>
             <div class="card" style="position: sticky; top: 20px;">
                 <div class="text-center mb-3">
-                    <img src="<?php echo get_profile_picture_url($user, $conn); ?>" 
+                    <?php
+                    // FIXED: Use the correct function signature
+                    $photo_url = get_profile_picture_url($user_id, $conn);
+                    ?>
+                    <img src="<?php echo $photo_url; ?>" 
                          alt="Profile" class="profile-preview" id="profilePreview">
                     <h4 style="margin: 1rem 0 0.5rem;"><?php echo htmlspecialchars($user['full_name']); ?></h4>
                     <p style="color: #666; font-size: 0.9em;">
                         <?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>
                     </p>
+                    <div class="visibility-badge <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? 'visible-badge' : 'hidden-badge'; ?>">
+                        <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? '👁️ Visible' : '👻 Hidden'; ?>
+                    </div>
                 </div>
                 <ul style="list-style: none; padding: 0;">
                     <li style="margin-bottom: 0.5rem;">
@@ -247,7 +241,12 @@ function get_profile_picture_url($user, $conn = null) {
         <!-- Main Content -->
         <main>
             <div class="card">
-                <h1 style="margin-bottom: 1.5rem;">Edit Profile</h1>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h1 style="margin: 0; font-size: 1.8rem;">Edit Profile</h1>
+                    <a href="candidate_dashboard.php" class="btn btn-outline" style="text-decoration: none; padding: 8px 16px; border: 1px solid #ddd; border-radius: 5px;">
+                        ← Back to Dashboard
+                    </a>
+                </div>
 
                 <?php if ($success_msg): ?>
                     <div class="alert alert-success" style="padding: 12px; background: #d4edda; color: #155724; border-radius: 5px; margin-bottom: 20px;">
@@ -261,65 +260,72 @@ function get_profile_picture_url($user, $conn = null) {
                     </div>
                 <?php endif; ?>
 
-                <form method="POST" action="candidate_profile.php" enctype="multipart/form-data">
+                <form method="POST" action="candidate_profile.php" enctype="multipart/form-data" id="profileForm">
                     
                     <!-- Profile Picture -->
                     <div class="form-section">
-                        <h3>Profile Picture</h3>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Profile Picture</h3>
                         <div class="photo-controls">
-                            <img src="<?php echo get_profile_picture_url($user, $conn); ?>" 
-                                 alt="Current" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 10px;"
+                            <?php
+                            // FIXED: Use the correct function signature here too
+                            $current_photo_url = get_profile_picture_url($user_id, $conn);
+                            ?>
+                            <img src="<?php echo $current_photo_url; ?>" 
+                                 alt="Current" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 3px solid #ddd;"
                                  id="currentPhoto">
                             
                             <input type="file" name="profile_picture" id="profilePictureInput" 
-                                   accept="image/*" style="margin-bottom: 10px;">
+                                   accept="image/*" style="margin-bottom: 10px; padding: 8px;">
                             
                             <?php if (!empty($user['profile_picture'])): ?>
-                            <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
-                                <input type="checkbox" name="remove_profile_picture" value="1">
-                                <span style="font-size: 0.9em;">Remove current photo</span>
+                            <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer;">
+                                <input type="checkbox" name="remove_profile_picture" value="1" id="removePhoto">
+                                <span style="font-size: 0.9em; color: #721c24;">🗑️ Remove current photo</span>
                             </label>
                             <?php endif; ?>
                             
                             <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
-                                Max 2MB. JPG, PNG, or GIF.
+                                Max 2MB. JPG, PNG, or GIF recommended.
                             </div>
                         </div>
                     </div>
 
                     <!-- Personal Information -->
                     <div class="form-section">
-                        <h3>Personal Information</h3>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #28a745; padding-bottom: 10px;">Personal Information</h3>
                         
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem;">
                             <div>
                                 <label style="font-weight: 500; display: block; margin-bottom: 5px;">Full Name *</label>
-                                <input type="text" name="full_name" style="width: 100%; padding: 10px;"
+                                <input type="text" name="full_name" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
                                     value="<?php echo htmlspecialchars($user['full_name']); ?>" required>
                             </div>
 
                             <div>
                                 <label style="font-weight: 500; display: block; margin-bottom: 5px;">Professional Title *</label>
-                                <input type="text" name="title" style="width: 100%; padding: 10px;"
-                                    value="<?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>" required>
+                                <input type="text" name="title" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                                    value="<?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>" required
+                                    placeholder="e.g. Software Engineer">
                             </div>
                         </div>
                         
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;">
                             <div>
                                 <label style="font-weight: 500; display: block; margin-bottom: 5px;">Phone Number</label>
-                                <input type="tel" name="phone" style="width: 100%; padding: 10px;"
-                                    value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>">
+                                <input type="tel" name="phone" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                                    value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>"
+                                    placeholder="+227 XX XX XX XX">
                             </div>
 
                             <div>
                                 <label style="font-weight: 500; display: block; margin-bottom: 5px;">Education Level</label>
-                                <select name="education_level" style="width: 100%; padding: 10px;">
+                                <select name="education_level" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; height: auto;">
                                     <option value="">Select Level</option>
                                     <option value="High School" <?php echo ($user['education_level'] ?? '') == 'High School' ? 'selected' : ''; ?>>High School</option>
                                     <option value="Bachelor" <?php echo ($user['education_level'] ?? '') == 'Bachelor' ? 'selected' : ''; ?>>Bachelor's Degree</option>
                                     <option value="Master" <?php echo ($user['education_level'] ?? '') == 'Master' ? 'selected' : ''; ?>>Master's Degree</option>
                                     <option value="PhD" <?php echo ($user['education_level'] ?? '') == 'PhD' ? 'selected' : ''; ?>>PhD</option>
+                                    <option value="Other" <?php echo ($user['education_level'] ?? '') == 'Other' ? 'selected' : ''; ?>>Other</option>
                                 </select>
                             </div>
                         </div>
@@ -327,49 +333,72 @@ function get_profile_picture_url($user, $conn = null) {
 
                     <!-- Skills -->
                     <div class="form-section">
-                        <h3>Skills & Expertise</h3>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #fd7e14; padding-bottom: 10px;">Skills & Expertise</h3>
                         <div style="margin-top: 1rem;">
                             <label style="font-weight: 500; display: block; margin-bottom: 5px;">Skills (comma separated)</label>
-                            <input type="text" name="skills" style="width: 100%; padding: 10px;"
+                            <input type="text" name="skills" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
                                 value="<?php echo htmlspecialchars($user['skills'] ?? ''); ?>"
-                                placeholder="PHP, MySQL, JavaScript">
+                                placeholder="PHP, MySQL, JavaScript, React, Project Management">
+                            <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
+                                Separate each skill with a comma.
+                            </div>
                         </div>
                     </div>
 
                     <!-- Bio -->
                     <div class="form-section">
-                        <h3>Professional Summary</h3>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #6f42c1; padding-bottom: 10px;">Professional Summary</h3>
                         <div style="margin-top: 1rem;">
                             <label style="font-weight: 500; display: block; margin-bottom: 5px;">Bio / Professional Summary</label>
-                            <textarea name="bio" style="width: 100%; padding: 10px; height: 150px;"
-                                placeholder="Tell employers about your experience..."><?php echo htmlspecialchars($user['bio'] ?? ''); ?></textarea>
+                            <textarea name="bio" style="width: 100%; padding: 10px; height: 150px; border: 1px solid #ddd; border-radius: 4px;"
+                                placeholder="Tell employers about your experience, achievements, and career goals..."><?php echo htmlspecialchars($user['bio'] ?? ''); ?></textarea>
+                            <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
+                                Recommended: 150-300 words highlighting your key achievements.
+                            </div>
                         </div>
                     </div>
 
                     <!-- Visibility -->
                     <div class="form-section">
-                        <h3>Profile Visibility</h3>
-                        <div style="display: flex; gap: 2rem; margin-top: 1rem;">
-                            <label style="display: flex; align-items: center; gap: 0.5rem;">
-                                <input type="radio" name="visibility" value="visible" 
-                                       <?php echo (!isset($user['visibility']) || $user['visibility'] === 'visible') ? 'checked' : ''; ?>>
-                                <span>Visible to Employers</span>
-                            </label>
-                            <label style="display: flex; align-items: center; gap: 0.5rem;">
-                                <input type="radio" name="visibility" value="hidden" 
-                                       <?php echo (isset($user['visibility']) && $user['visibility'] === 'hidden') ? 'checked' : ''; ?>>
-                                <span>Hidden (Private)</span>
-                            </label>
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;">Profile Visibility</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                            <div style="background: white; padding: 1rem; border-radius: 8px; border: 2px solid #e2e8f0;"
+                                 onmouseover="this.style.borderColor='#28a745'" onmouseout="this.style.borderColor='#e2e8f0'">
+                                <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; width: 100%;">
+                                    <input type="radio" name="visibility" value="visible" 
+                                           <?php echo (!isset($user['visibility']) || $user['visibility'] === 'visible') ? 'checked' : ''; ?>
+                                           style="margin: 0;">
+                                    <div>
+                                        <div style="font-weight: 600; color: #155724;">👁️ Visible to Employers</div>
+                                        <div style="font-size: 0.9em; color: #666; margin-top: 5px;">Your profile can be found in search results</div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div style="background: white; padding: 1rem; border-radius: 8px; border: 2px solid #e2e8f0;"
+                                 onmouseover="this.style.borderColor='#dc3545'" onmouseout="this.style.borderColor='#e2e8f0'">
+                                <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; width: 100%;">
+                                    <input type="radio" name="visibility" value="hidden" 
+                                           <?php echo (isset($user['visibility']) && $user['visibility'] === 'hidden') ? 'checked' : ''; ?>
+                                           style="margin: 0;">
+                                    <div>
+                                        <div style="font-weight: 600; color: #721c24;">👻 Hidden (Private)</div>
+                                        <div style="font-size: 0.9em; color: #666; margin-top: 5px;">Only visible to you</div>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Submit -->
-                    <div style="margin-top: 2rem;">
-                        <button type="submit" style="padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                            Save Profile Changes
+                    <div style="display: flex; gap: 1rem; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0;">
+                        <button type="submit" style="padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 500;">
+                            💾 Save Profile Changes
                         </button>
-                        <a href="candidate_dashboard.php" style="padding: 12px 24px; margin-left: 1rem; text-decoration: none;">
-                            Cancel
+                        <button type="reset" style="padding: 12px 24px; background: white; border: 1px solid #ddd; border-radius: 5px; cursor: pointer;">
+                            ↩️ Reset Changes
+                        </button>
+                        <a href="candidate_dashboard.php" style="padding: 12px 24px; text-decoration: none; background: white; border: 1px solid #ddd; border-radius: 5px;">
+                            ❌ Cancel
                         </a>
                     </div>
                 </form>
@@ -386,10 +415,55 @@ document.getElementById('profilePictureInput').addEventListener('change', functi
         reader.onload = function(e) {
             document.getElementById('profilePreview').src = e.target.result;
             document.getElementById('currentPhoto').src = e.target.result;
+            // Uncheck remove photo if selecting new one
+            if (document.getElementById('removePhoto')) {
+                document.getElementById('removePhoto').checked = false;
+            }
         }
         reader.readAsDataURL(this.files[0]);
     }
 });
+
+// When remove photo is checked
+document.getElementById('removePhoto')?.addEventListener('change', function() {
+    if (this.checked) {
+        document.getElementById('profilePictureInput').value = '';
+        // Show default avatar
+        const defaultAvatar = '<?php echo get_profile_picture_url($user_id, $conn); ?>';
+        document.getElementById('profilePreview').src = defaultAvatar;
+        document.getElementById('currentPhoto').src = defaultAvatar;
+    }
+});
+
+// Form validation
+document.getElementById('profileForm').addEventListener('submit', function(e) {
+    const fullName = this.querySelector('input[name="full_name"]').value.trim();
+    const title = this.querySelector('input[name="title"]').value.trim();
+    
+    if (!fullName || !title) {
+        e.preventDefault();
+        alert('Please fill in Full Name and Professional Title');
+        return false;
+    }
+    
+    const fileInput = this.querySelector('input[name="profile_picture"]');
+    if (fileInput.files.length > 0) {
+        const fileSize = fileInput.files[0].size / 1024 / 1024;
+        if (fileSize > 2) {
+            e.preventDefault();
+            alert('Profile picture must be less than 2MB');
+            return false;
+        }
+    }
+    
+    return true;
+});
 </script>
 
-<?php require_once 'includes/footer.php'; ?>
+<?php 
+// Remove error display in production
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(0);
+require_once 'includes/footer.php'; 
+?>
