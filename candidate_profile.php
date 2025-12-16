@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get profile picture URL
+/* // Get profile picture URL
 function get_profile_picture_url($user, $conn = null) {
     if (!empty($user['profile_picture']) && $conn) {
         try {
@@ -157,6 +157,7 @@ function get_profile_picture_url($user, $conn = null) {
     $name = urlencode($user['full_name'] ?? 'User');
     return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
 }
+**/
 ?>
 
 <!DOCTYPE html>
