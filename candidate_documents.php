@@ -72,9 +72,23 @@ $stmt->execute([$user_id]);
 $documents = $stmt->fetchAll();
 
 // Fetch Profile for sidebar
-$stmt = $conn->prepare("SELECT * FROM candidates WHERE id = ?");
-$stmt->execute([$user_id]);
-$user = $stmt->fetch();
+<!-- Sidebar -->
+<aside>
+    <div class="card">
+        <div class="text-center mb-2">
+            <?php
+            $photo_url = get_profile_picture_url($user_id, $conn);
+            ?>
+            <img src="<?php echo $photo_url; ?>" alt="Profile"
+                style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem;">
+            <h4><?php echo sanitize($user['full_name']); ?></h4>
+            <p style="color: var(--text-muted);"><?php echo sanitize($user['title'] ?: 'Job Seeker'); ?></p>
+        </div>
+        <!-- ... rest of sidebar ... -->
+    </div>
+</aside>
+
+
 ?>
 
 <!DOCTYPE html>
