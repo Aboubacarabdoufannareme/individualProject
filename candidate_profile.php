@@ -1,12 +1,7 @@
 <?php
-// candidate_profile.php - FIXED FOR PROFILE PICTURE STORAGE
+// candidate_profile.php - FINAL WORKING VERSION
 require_once 'includes/header.php';
 require_login();
-
-// Enable error reporting temporarily
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
 
 // Ensure user is a candidate
 if (get_role() !== 'candidate') {
@@ -17,10 +12,10 @@ $user_id = $_SESSION['user_id'];
 $success_msg = '';
 $error_msg = '';
 
-// Add missing columns with proper sizes
+// Add missing columns if needed (profile_picture will only store filename or NULL)
 $self_healing_queries = [
     'visibility' => "ALTER TABLE candidates ADD COLUMN visibility ENUM('visible', 'hidden') DEFAULT 'visible' AFTER skills",
-    'profile_picture' => "ALTER TABLE candidates ADD COLUMN profile_picture TEXT DEFAULT NULL AFTER email",
+    'profile_picture' => "ALTER TABLE candidates ADD COLUMN profile_picture VARCHAR(255) DEFAULT NULL AFTER email",
     'title' => "ALTER TABLE candidates ADD COLUMN title VARCHAR(100) DEFAULT 'Job Seeker' AFTER full_name",
     'phone' => "ALTER TABLE candidates ADD COLUMN phone VARCHAR(20) AFTER email",
     'bio' => "ALTER TABLE candidates ADD COLUMN bio TEXT AFTER phone",
@@ -32,18 +27,7 @@ foreach ($self_healing_queries as $column => $sql) {
     try {
         $conn->query("SELECT $column FROM candidates LIMIT 1");
     } catch (PDOException $e) {
-        // Change profile_picture to TEXT if it exists as VARCHAR
-        if ($column == 'profile_picture') {
-            try {
-                $conn->exec("ALTER TABLE candidates MODIFY profile_picture TEXT DEFAULT NULL");
-            } catch (Exception $ex) {
-                // If modify fails, try to add as TEXT
-                $conn->exec($sql);
-            }
-        } else {
-            $conn->exec($sql);
-        }
-        error_log("Added/modified column: $column");
+        $conn->exec($sql);
     }
 }
 
@@ -53,7 +37,7 @@ $stmt->execute([$user_id]);
 $user = $stmt->fetch();
 
 if (!$user) {
-    // Create minimal user record if it doesn't exist
+    // Create minimal user record
     try {
         $stmt = $conn->prepare("INSERT INTO candidates (id, username, full_name, email) VALUES (?, ?, ?, ?)");
         $stmt->execute([$user_id, $_SESSION['username'], $_SESSION['username'], $_SESSION['email']]);
@@ -75,8 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $skills = sanitize($_POST['skills'] ?? ($user['skills'] ?? ''));
     $visibility = sanitize($_POST['visibility'] ?? ($user['visibility'] ?? 'visible'));
     
-    // Handle Profile Picture Upload
-    $profile_picture_data = null;
+    // Handle Profile Picture - SIMPLIFIED APPROACH
+    $profile_picture_filename = $user['profile_picture'] ?? null;
     
     if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] == 0) {
         $allowed = ['jpg', 'jpeg', 'png', 'gif'];
@@ -85,86 +69,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if (in_array($ext, $allowed)) {
             if ($_FILES['profile_picture']['size'] <= 2 * 1024 * 1024) { // 2MB limit
+                
+                // Generate unique filename
+                $new_filename = 'profile_' . $user_id . '_' . time() . '.' . $ext;
+                
                 // Read file content
                 $file_content = file_get_contents($_FILES['profile_picture']['tmp_name']);
                 if ($file_content !== false) {
-                    // Generate unique filename
-                    $new_name = 'profile_' . $user_id . '_' . time() . '.' . $ext;
                     
                     try {
-                        // OPTION 1: Store in documents table (BLOB - BEST)
+                        // 1. First, delete any existing profile picture from documents table
+                        $conn->prepare("DELETE FROM documents WHERE candidate_id = ? AND type = 'profile_pic'")
+                             ->execute([$user_id]);
+                        
+                        // 2. Store new profile picture in documents table (BLOB)
                         $stmt = $conn->prepare("INSERT INTO documents (candidate_id, type, file_path, original_name, file_content, file_size, mime_type) 
                                                 VALUES (?, 'profile_pic', ?, ?, ?, ?, ?)");
                         $stmt->execute([
                             $user_id,
-                            $new_name,
+                            $new_filename,
                             $filename,
                             $file_content,
                             $_FILES['profile_picture']['size'],
                             $_FILES['profile_picture']['type']
                         ]);
                         
-                        // Store only filename reference in candidates table
-                        $profile_picture_data = $new_name;
+                        // 3. Store only filename in candidates table
+                        $profile_picture_filename = $new_filename;
                         
                     } catch (PDOException $e) {
-                        // OPTION 2: If BLOB fails, compress and store as base64 in TEXT column
-                        error_log("BLOB storage failed: " . $e->getMessage());
-                        
-                        // Compress image if possible
-                        $compressed_content = $file_content;
-                        if ($ext == 'jpg' || $ext == 'jpeg') {
-                            // Try to compress JPEG
-                            $image = imagecreatefromjpeg($_FILES['profile_picture']['tmp_name']);
-                            if ($image !== false) {
-                                ob_start();
-                                imagejpeg($image, null, 75); // 75% quality
-                                $compressed_content = ob_get_clean();
-                                imagedestroy($image);
-                            }
-                        } elseif ($ext == 'png') {
-                            // Try to compress PNG
-                            $image = imagecreatefrompng($_FILES['profile_picture']['tmp_name']);
-                            if ($image !== false) {
-                                imagealphablending($image, false);
-                                imagesavealpha($image, true);
-                                ob_start();
-                                imagepng($image, null, 6); // Compression level 6 (0-9)
-                                $compressed_content = ob_get_clean();
-                                imagedestroy($image);
-                            }
+                        // If documents table fails, try to save to filesystem as fallback
+                        $upload_dir = dirname(__DIR__) . '/uploads/photos/';
+                        if (!is_dir($upload_dir)) {
+                            @mkdir($upload_dir, 0755, true);
                         }
                         
-                        // Convert to base64
-                        $base64_data = 'data:' . $_FILES['profile_picture']['type'] . ';base64,' . base64_encode($compressed_content);
-                        
-                        // Check size before storing (TEXT can hold ~65KB)
-                        if (strlen($base64_data) <= 65535) {
-                            $profile_picture_data = $base64_data;
+                        $destination = $upload_dir . $new_filename;
+                        if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $destination)) {
+                            $profile_picture_filename = $new_filename;
                         } else {
-                            $error_msg = "Image too large even after compression. Please use a smaller image.";
+                            $error_msg = "Failed to save profile picture. Please try again.";
                         }
                     }
                 } else {
                     $error_msg = "Could not read uploaded image.";
                 }
             } else {
-                $error_msg = "Image too large (max 2MB).";
+                $error_msg = "Image too large (max 2MB). Please resize your image.";
             }
         } else {
             $error_msg = "Invalid image format. Use JPG, PNG, or GIF.";
         }
     } elseif (isset($_POST['remove_profile_picture'])) {
-        // Handle profile picture removal
-        $profile_picture_data = null;
-    } else {
-        // Keep existing profile picture
-        $profile_picture_data = $user['profile_picture'] ?? null;
+        // Remove profile picture
+        try {
+            // Delete from documents table
+            $conn->prepare("DELETE FROM documents WHERE candidate_id = ? AND type = 'profile_pic'")
+                 ->execute([$user_id]);
+            
+            // Also try to delete from filesystem if exists
+            if (!empty($user['profile_picture'])) {
+                $possible_paths = [
+                    dirname(__DIR__) . '/uploads/photos/' . $user['profile_picture'],
+                    dirname(__DIR__) . '/uploads/' . $user['profile_picture']
+                ];
+                foreach ($possible_paths as $path) {
+                    if (file_exists($path)) {
+                        @unlink($path);
+                        break;
+                    }
+                }
+            }
+            
+            $profile_picture_filename = null;
+        } catch (Exception $e) {
+            // Continue anyway
+            $profile_picture_filename = null;
+        }
     }
 
     if (empty($error_msg)) {
         try {
-            // Update candidates table - store either filename or base64
+            // Update candidates table with filename only (not base64 data)
             $stmt = $conn->prepare("
                 UPDATE candidates 
                 SET full_name = ?, 
@@ -186,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $education_level, 
                 $skills, 
                 $visibility, 
-                $profile_picture_data,
+                $profile_picture_filename,
                 $user_id
             ]);
             
@@ -198,74 +184,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $user = $stmt->fetch();
             
         } catch (PDOException $e) {
-            $error_msg = "Database error: " . $e->getMessage();
-            error_log("Profile update error: " . $e->getMessage());
-            
-            // Try without profile_picture if it's the issue
-            if (strpos($e->getMessage(), 'profile_picture') !== false) {
-                try {
-                    $stmt = $conn->prepare("
-                        UPDATE candidates 
-                        SET full_name = ?, 
-                            title = ?, 
-                            phone = ?, 
-                            bio = ?, 
-                            education_level = ?, 
-                            skills = ?, 
-                            visibility = ?
-                        WHERE id = ?
-                    ");
-                    
-                    $stmt->execute([
-                        $full_name, 
-                        $title, 
-                        $phone, 
-                        $bio, 
-                        $education_level, 
-                        $skills, 
-                        $visibility,
-                        $user_id
-                    ]);
-                    
-                    $success_msg = "✅ Profile updated (without picture)!";
-                    $stmt = $conn->prepare("SELECT * FROM candidates WHERE id = ?");
-                    $stmt->execute([$user_id]);
-                    $user = $stmt->fetch();
-                    
-                } catch (PDOException $e2) {
-                    $error_msg = "Critical error: " . $e2->getMessage();
-                }
-            }
+            $error_msg = "Error saving profile: " . $e->getMessage();
         }
     }
 }
 
-// Get profile picture URL
+// Get profile picture URL - SIMPLIFIED
 function get_profile_picture_url($user, $conn = null) {
-    if (!empty($user['profile_picture'])) {
-        // Check if it's a base64 encoded image
-        if (strpos($user['profile_picture'], 'data:image') === 0) {
-            return $user['profile_picture'];
-        }
-        
-        // Check if it's a filename reference to documents table
-        if ($conn) {
-            try {
-                $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
-                                        WHERE candidate_id = ? AND file_path = ? AND type = 'profile_pic' 
-                                        ORDER BY uploaded_at DESC LIMIT 1");
-                $stmt->execute([$user['id'], $user['profile_picture']]);
-                $result = $stmt->fetch();
-                
-                if ($result && !empty($result['file_content'])) {
-                    return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
-                }
-            } catch (PDOException $e) {
-                // Fall through to filesystem check
+    if (!empty($user['profile_picture']) && $conn) {
+        try {
+            // Try to get from documents table first
+            $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
+                                    WHERE candidate_id = ? AND file_path = ? AND type = 'profile_pic' 
+                                    LIMIT 1");
+            $stmt->execute([$user['id'], $user['profile_picture']]);
+            $result = $stmt->fetch();
+            
+            if ($result && !empty($result['file_content'])) {
+                return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
             }
+        } catch (PDOException $e) {
+            // Continue to filesystem check
         }
         
-        // Try to find the file in filesystem (fallback)
+        // Try filesystem as fallback
         $possible_paths = [
             'uploads/photos/' . $user['profile_picture'],
             'uploads/' . $user['profile_picture'],
@@ -279,7 +221,7 @@ function get_profile_picture_url($user, $conn = null) {
         }
     }
     
-    // Default avatar using UI Avatars
+    // Default avatar
     $name = urlencode($user['full_name'] ?? 'User');
     return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
 }
@@ -333,24 +275,19 @@ function get_profile_picture_url($user, $conn = null) {
             background: #f8d7da;
             color: #721c24;
         }
-        .remove-photo-btn {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 0.85em;
-            cursor: pointer;
-            margin-top: 10px;
-            display: inline-block;
-        }
-        .remove-photo-btn:hover {
-            background: #f1b0b7;
-        }
         .photo-controls {
             display: flex;
             flex-direction: column;
             align-items: center;
+        }
+        .image-size-warning {
+            font-size: 0.8em;
+            color: #dc3545;
+            margin-top: 5px;
+            padding: 5px;
+            background: #f8d7da;
+            border-radius: 4px;
+            display: none;
         }
     </style>
 </head>
@@ -451,6 +388,8 @@ function get_profile_picture_url($user, $conn = null) {
                                 <input type="file" name="profile_picture" id="profilePictureInput" 
                                        accept="image/*" class="form-control" style="padding: 8px; margin-bottom: 10px;">
                                 
+                                <div id="imageSizeWarning" class="image-size-warning"></div>
+                                
                                 <?php if (!empty($user['profile_picture'])): ?>
                                 <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer;">
                                     <input type="checkbox" name="remove_profile_picture" value="1" id="removePhoto">
@@ -473,7 +412,7 @@ function get_profile_picture_url($user, $conn = null) {
                                                    style="margin-top: 3px;">
                                             <div>
                                                 <div style="font-weight: 600; color: #155724;">👁️ Visible to Employers</div>
-                                                <div style="font-size: 0.9em; color: #666; margin-top: 5px;">Your profile can be found in search results and viewed by employers</div>
+                                                <div style="font-size: 0.9em; color: #666; margin-top: 5px;">Your profile can be found in search results</div>
                                             </div>
                                         </label>
                                     </div>
@@ -485,7 +424,7 @@ function get_profile_picture_url($user, $conn = null) {
                                                    style="margin-top: 3px;">
                                             <div>
                                                 <div style="font-weight: 600; color: #721c24;">👻 Hidden (Private)</div>
-                                                <div style="font-size: 0.9em; color: #666; margin-top: 5px;">Only visible to you. Employers cannot find your profile</div>
+                                                <div style="font-size: 0.9em; color: #666; margin-top: 5px;">Only visible to you</div>
                                             </div>
                                         </label>
                                     </div>
@@ -510,7 +449,7 @@ function get_profile_picture_url($user, $conn = null) {
                                 <label class="form-label" style="font-weight: 500;">Professional Title *</label>
                                 <input type="text" name="title" class="form-control" style="padding: 10px;"
                                     value="<?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>" required
-                                    placeholder="e.g. Software Engineer, Marketing Specialist">
+                                    placeholder="e.g. Software Engineer">
                             </div>
                         </div>
                         
@@ -544,8 +483,7 @@ function get_profile_picture_url($user, $conn = null) {
                             <label class="form-label" style="font-weight: 500;">Skills (comma separated)</label>
                             <input type="text" name="skills" class="form-control" style="padding: 10px;"
                                 value="<?php echo htmlspecialchars($user['skills'] ?? ''); ?>"
-                                placeholder="e.g. PHP, MySQL, JavaScript, React, Project Management">
-                            <div class="upload-hint">Separate each skill with a comma.</div>
+                                placeholder="e.g. PHP, MySQL, JavaScript">
                         </div>
                     </div>
 
@@ -556,8 +494,7 @@ function get_profile_picture_url($user, $conn = null) {
                         <div class="form-group" style="margin-top: 1rem;">
                             <label class="form-label" style="font-weight: 500;">Bio / Professional Summary</label>
                             <textarea name="bio" class="form-control" rows="6" style="padding: 10px;"
-                                placeholder="Tell employers about your experience, achievements, and career goals..."><?php echo htmlspecialchars($user['bio'] ?? ''); ?></textarea>
-                            <div class="upload-hint">Recommended: 150-300 words.</div>
+                                placeholder="Tell employers about your experience..."><?php echo htmlspecialchars($user['bio'] ?? ''); ?></textarea>
                         </div>
                     </div>
 
@@ -582,31 +519,45 @@ function get_profile_picture_url($user, $conn = null) {
 <script>
 // Preview image before upload
 function previewImage(input) {
+    const warning = document.getElementById('imageSizeWarning');
+    warning.style.display = 'none';
+    
     if (input.files && input.files[0]) {
+        const fileSize = input.files[0].size / 1024 / 1024; // in MB
+        
+        if (fileSize > 2) {
+            warning.textContent = `Image is ${fileSize.toFixed(2)}MB. Maximum size is 2MB.`;
+            warning.style.display = 'block';
+            input.value = '';
+            return;
+        }
+        
         const reader = new FileReader();
         reader.onload = function(e) {
-            // Update sidebar preview
+            // Update both previews
             document.getElementById('profilePreview').src = e.target.result;
-            // Update form preview
             document.getElementById('currentPhoto').src = e.target.result;
             // Uncheck remove photo if selecting new one
-            document.getElementById('removePhoto').checked = false;
+            if (document.getElementById('removePhoto')) {
+                document.getElementById('removePhoto').checked = false;
+            }
         }
         reader.readAsDataURL(input.files[0]);
     }
 }
 
-// Add event listeners
+// Event listeners
 document.getElementById('profilePictureInput').addEventListener('change', function() {
     previewImage(this);
 });
 
-// When remove photo is checked, clear file input
+// When remove photo is checked
 document.getElementById('removePhoto')?.addEventListener('change', function() {
     if (this.checked) {
         document.getElementById('profilePictureInput').value = '';
-        // Show default avatar preview
-        const defaultAvatar = 'https://ui-avatars.com/api/?name=<?php echo urlencode($user['full_name'] ?? "User"); ?>&background=0ea5e9&color=fff&size=128';
+        // Show default avatar
+        const name = encodeURIComponent('<?php echo addslashes($user['full_name'] ?? "User"); ?>');
+        const defaultAvatar = `https://ui-avatars.com/api/?name=${name}&background=0ea5e9&color=fff&size=128`;
         document.getElementById('profilePreview').src = defaultAvatar;
         document.getElementById('currentPhoto').src = defaultAvatar;
     }
@@ -619,14 +570,13 @@ document.getElementById('profileForm').addEventListener('submit', function(e) {
     
     if (!fullName || !title) {
         e.preventDefault();
-        alert('Please fill in all required fields (Full Name and Professional Title)');
+        alert('Please fill in Full Name and Professional Title');
         return false;
     }
     
-    // Check file size if image is selected
     const fileInput = this.querySelector('input[name="profile_picture"]');
     if (fileInput.files.length > 0) {
-        const fileSize = fileInput.files[0].size / 1024 / 1024; // in MB
+        const fileSize = fileInput.files[0].size / 1024 / 1024;
         if (fileSize > 2) {
             e.preventDefault();
             alert('Profile picture must be less than 2MB');
@@ -638,10 +588,4 @@ document.getElementById('profileForm').addEventListener('submit', function(e) {
 });
 </script>
 
-<?php 
-// Remove error display in production
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(0);
-require_once 'includes/footer.php'; 
-?>
+<?php require_once 'includes/footer.php'; ?>
