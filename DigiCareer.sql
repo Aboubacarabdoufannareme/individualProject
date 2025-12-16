@@ -140,3 +140,7 @@ ALTER TABLE candidates MODIFY profile_picture TEXT DEFAULT NULL;
 
 -- OR better: Store only filename and use documents table for BLOB
 -- This is what the code does by default
+
+-- Add 'profile_pic' to the ENUM type
+ALTER TABLE documents MODIFY COLUMN type 
+ENUM('cv', 'diploma', 'certificate', 'cover_letter', 'profile_pic') NOT NULL;
