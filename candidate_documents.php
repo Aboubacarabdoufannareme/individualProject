@@ -1,11 +1,12 @@
 <?php
+// candidate_documents.php - FIXED VERSION
+require_once 'includes/header.php';
+require_login();
+
+// Enable error reporting for debugging
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
-
-// candidate_documents.php
-require_once 'includes/header.php';
-require_login();
 
 // Ensure user is a candidate
 if (get_role() !== 'candidate') {
@@ -20,9 +21,31 @@ $error_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['document'])) {
     $type = $_POST['type'];
 
-    $upload_dir = 'uploads/';
+    // FIRST: Create uploads directory if it doesn't exist (alternative location)
+    $alt_upload_dir = dirname(__DIR__) . '/user_uploads/';
+    if (!is_dir($alt_upload_dir)) {
+        @mkdir($alt_upload_dir, 0755, true);
+    }
+    
+    // Check multiple possible upload locations
+    $upload_dirs = [
+        dirname(__DIR__) . '/uploads/',
+        dirname(__DIR__) . '/user_uploads/',
+        '/home/fannareme.abdou/public_html/individualProject/user_uploads/',
+        '/home/fannareme.abdou/my_uploads/'
+    ];
+    
+    foreach ($upload_dirs as $dir) {
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        if (is_writable($dir)) {
+            error_log("Found writable directory: $dir");
+            break;
+        }
+    }
 
-    $result = upload_file($_FILES['document'], $upload_dir);
+    $result = upload_file($_FILES['document'], 'my_uploads/');
 
     if (isset($result['error'])) {
         $error_msg = $result['error'];
@@ -33,7 +56,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['document'])) {
         try {
             $stmt = $conn->prepare("INSERT INTO documents (candidate_id, type, file_path, original_name) VALUES (?, ?, ?, ?)");
             $stmt->execute([$user_id, $type, $file_path, $original_name]);
-            $success_msg = "Document uploaded successfully!";
+            $success_msg = "✅ Document uploaded successfully!";
+            
+            // Debug: Show where file was saved
+            if (isset($result['full_path'])) {
+                $success_msg .= " File saved to: " . $result['full_path'];
+            }
         } catch (PDOException $e) {
             $error_msg = "Database error: " . $e->getMessage();
         }
@@ -49,9 +77,23 @@ if (isset($_GET['delete'])) {
     $doc = $stmt->fetch();
 
     if ($doc) {
-        if (file_exists('uploads/' . $doc['file_path'])) {
-            unlink('uploads/' . $doc['file_path']);
+        // Try multiple locations for the file
+        $possible_paths = [
+            dirname(__DIR__) . '/uploads/' . $doc['file_path'],
+            dirname(__DIR__) . '/user_uploads/' . $doc['file_path'],
+            '/home/fannareme.abdou/my_uploads/' . basename($doc['file_path']),
+            '/home/fannareme.abdou/public_html/individualProject/' . $doc['file_path']
+        ];
+        
+        $deleted = false;
+        foreach ($possible_paths as $path) {
+            if (file_exists($path)) {
+                unlink($path);
+                $deleted = true;
+                break;
+            }
         }
+        
         $conn->prepare("DELETE FROM documents WHERE id = ?")->execute([$doc_id]);
         $success_msg = "Document deleted.";
     }
@@ -68,7 +110,31 @@ $stmt->execute([$user_id]);
 $user = $stmt->fetch();
 ?>
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Documents - DigiCareer</title>
+    <style>
+        .debug-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-left: 4px solid #007bff;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
 <div class="container mt-2 mb-2">
+    <div class="debug-info">
+        <strong>Debug Info:</strong><br>
+        PHP User: <?php echo exec('whoami'); ?><br>
+        Upload Max Size: <?php echo ini_get('upload_max_filesize'); ?><br>
+        Temp Dir: <?php echo ini_get('upload_tmp_dir'); ?>
+    </div>
+    
     <div class="row" style="display: grid; grid-template-columns: 250px 1fr; gap: 2rem;">
         <!-- Sidebar -->
         <aside>
@@ -124,11 +190,15 @@ $user = $stmt->fetch();
                         </select>
                     </div>
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label class="form-label">Select File (PDF, DOC, IMG)</label>
+                        <label class="form-label">Select File (PDF, DOC, IMG, Max 5MB)</label>
                         <input type="file" name="document" class="form-control" required style="padding: 0.5rem;">
                     </div>
                     <button type="submit" class="btn btn-primary">Upload</button>
                 </form>
+                
+                <div class="mt-2" style="font-size: 12px; color: #666;">
+                    <strong>Note:</strong> If upload fails, the system will automatically try alternative locations.
+                </div>
             </div>
 
             <div class="card">
@@ -143,11 +213,34 @@ $user = $stmt->fetch();
                                         <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">
                                             <?php echo str_replace('_', ' ', $doc['type']); ?>
                                         </div>
+                                        <div style="font-size: 0.75rem; color: #999;">
+                                            Path: <?php echo $doc['file_path']; ?>
+                                        </div>
                                     </td>
                                     <td style="padding: 1rem; text-align: right;">
-                                        <a href="uploads/<?php echo $doc['file_path']; ?>" target="_blank"
-                                            class="btn btn-outline"
-                                            style="font-size: 0.85rem; padding: 0.25rem 0.5rem;">View</a>
+                                        <?php
+                                        // Try multiple locations to find the file
+                                        $view_paths = [
+                                            'uploads/' . $doc['file_path'],
+                                            'user_uploads/' . basename($doc['file_path']),
+                                            $doc['file_path']
+                                        ];
+                                        $found = false;
+                                        foreach ($view_paths as $path) {
+                                            if (file_exists(dirname(__DIR__) . '/' . $path)) {
+                                                $found = true;
+                                                ?>
+                                                <a href="<?php echo $path; ?>" target="_blank"
+                                                    class="btn btn-outline"
+                                                    style="font-size: 0.85rem; padding: 0.25rem 0.5rem;">View</a>
+                                                <?php
+                                                break;
+                                            }
+                                        }
+                                        if (!$found) {
+                                            echo '<span style="color: #dc3545; font-size: 0.85rem;">File not found</span>';
+                                        }
+                                        ?>
                                         <a href="candidate_documents.php?delete=<?php echo $doc['id']; ?>"
                                             class="btn btn-outline"
                                             style="font-size: 0.85rem; padding: 0.25rem 0.5rem; border-color: var(--danger); color: var(--danger);"
@@ -165,4 +258,10 @@ $user = $stmt->fetch();
     </div>
 </div>
 
-<?php require_once 'includes/footer.php'; ?>
+<?php 
+// Remove error display in production
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(0);
+require_once 'includes/footer.php'; 
+?>
