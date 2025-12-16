@@ -1,4 +1,8 @@
 <?php
+// Turn on full error reporting for debugging
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 // candidate_documents.php - DATABASE STORAGE VERSION
 require_once 'includes/header.php';
 require_login();
