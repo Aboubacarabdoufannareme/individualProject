@@ -1,5 +1,5 @@
 <?php
-// employer_profile.php
+// employer_profile.php - COMPLETE VERSION
 require_once 'includes/header.php';
 require_login();
 
@@ -12,51 +12,21 @@ $user_id = $_SESSION['user_id'];
 $success_msg = '';
 $error_msg = '';
 
-// Handle Form Submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Self-healing: Add logo column if not exists
+// Self-healing: Add missing columns
+$self_healing_queries = [
+    'logo' => "ALTER TABLE employers ADD COLUMN logo VARCHAR(255) DEFAULT NULL AFTER email",
+    'website' => "ALTER TABLE employers ADD COLUMN website VARCHAR(100) AFTER email",
+    'location' => "ALTER TABLE employers ADD COLUMN location VARCHAR(100) AFTER website",
+    'industry' => "ALTER TABLE employers ADD COLUMN industry VARCHAR(50) AFTER location",
+    'description' => "ALTER TABLE employers ADD COLUMN description TEXT AFTER industry",
+    'phone' => "ALTER TABLE employers ADD COLUMN phone VARCHAR(20) AFTER email"
+];
+
+foreach ($self_healing_queries as $column => $sql) {
     try {
-        $conn->query("SELECT logo FROM employers LIMIT 1");
+        $conn->query("SELECT $column FROM employers LIMIT 1");
     } catch (PDOException $e) {
-        $conn->exec("ALTER TABLE employers ADD COLUMN logo VARCHAR(255) DEFAULT NULL AFTER email");
-    }
-
-    $company_name = sanitize($_POST['company_name']);
-    $website = sanitize($_POST['website']);
-    $location = sanitize($_POST['location']);
-    $industry = sanitize($_POST['industry']);
-    $description = sanitize($_POST['description']);
-    $phone = sanitize($_POST['phone']);
-
-    // Handle File Upload
-    // Fetch user first to get existing logo if needed
-    $stmt = $conn->prepare("SELECT * FROM employers WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $current_user = $stmt->fetch();
-
-    $logo = $current_user['logo'] ?? null;
-
-    if (isset($_FILES['logo']) && $_FILES['logo']['error'] == 0) {
-        $upload = upload_file($_FILES['logo'], 'uploads/logos/');
-        if (isset($upload['success'])) {
-            $logo = $upload['path'];
-        } else {
-            $error_msg = $upload['error'];
-        }
-    }
-
-    if (!$error_msg) {
-        try {
-            $stmt = $conn->prepare("
-                UPDATE employers 
-                SET company_name = ?, website = ?, location = ?, industry = ?, description = ?, phone = ?, logo = ? 
-                WHERE id = ?
-            ");
-            $stmt->execute([$company_name, $website, $location, $industry, $description, $phone, $logo, $user_id]);
-            $success_msg = "Company profile updated successfully!";
-        } catch (PDOException $e) {
-            $error_msg = "Error updating profile: " . $e->getMessage();
-        }
+        $conn->exec($sql);
     }
 }
 
@@ -64,35 +34,279 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stmt = $conn->prepare("SELECT * FROM employers WHERE id = ?");
 $stmt->execute([$user_id]);
 $user = $stmt->fetch();
+
+// Handle Form Submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $company_name = sanitize($_POST['company_name'] ?? $user['company_name']);
+    $website = sanitize($_POST['website'] ?? ($user['website'] ?? ''));
+    $location = sanitize($_POST['location'] ?? ($user['location'] ?? ''));
+    $industry = sanitize($_POST['industry'] ?? ($user['industry'] ?? ''));
+    $description = sanitize($_POST['description'] ?? ($user['description'] ?? ''));
+    $phone = sanitize($_POST['phone'] ?? ($user['phone'] ?? ''));
+    
+    // Handle Logo Upload - DATABASE APPROACH
+    $logo_filename = $user['logo'] ?? null;
+    
+    if (isset($_FILES['logo']) && $_FILES['logo']['error'] == 0) {
+        $allowed = ['jpg', 'jpeg', 'png', 'gif', 'svg'];
+        $filename = $_FILES['logo']['name'];
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        
+        if (in_array($ext, $allowed)) {
+            if ($_FILES['logo']['size'] <= 2 * 1024 * 1024) { // 2MB limit
+                
+                // Read file content
+                $file_content = file_get_contents($_FILES['logo']['tmp_name']);
+                if ($file_content !== false) {
+                    
+                    // Generate unique filename
+                    $new_filename = 'logo_' . $user_id . '_' . time() . '.' . $ext;
+                    
+                    try {
+                        // Delete any existing logo from documents table
+                        $conn->prepare("DELETE FROM documents WHERE candidate_id = ? AND type = 'company_logo'")
+                             ->execute([$user_id]);
+                        
+                        // Store logo in documents table (reusing the same table)
+                        $stmt = $conn->prepare("INSERT INTO documents (candidate_id, type, file_path, original_name, file_content, file_size, mime_type) 
+                                                VALUES (?, 'company_logo', ?, ?, ?, ?, ?)");
+                        $stmt->execute([
+                            $user_id,
+                            $new_filename,
+                            $filename,
+                            $file_content,
+                            $_FILES['logo']['size'],
+                            $_FILES['logo']['type']
+                        ]);
+                        
+                        // Store filename reference in employers table
+                        $logo_filename = $new_filename;
+                        
+                    } catch (PDOException $e) {
+                        // If documents table fails, use base64 as fallback
+                        if ($_FILES['logo']['size'] <= 500 * 1024) { // 500KB max for base64
+                            $logo_filename = 'data:' . $_FILES['logo']['type'] . ';base64,' . base64_encode($file_content);
+                        } else {
+                            $error_msg = "Logo too large for fallback storage (max 500KB).";
+                        }
+                    }
+                } else {
+                    $error_msg = "Could not read uploaded logo.";
+                }
+            } else {
+                $error_msg = "Logo too large (max 2MB).";
+            }
+        } else {
+            $error_msg = "Invalid image format. Use JPG, PNG, GIF, or SVG.";
+        }
+    } elseif (isset($_POST['remove_logo'])) {
+        // Remove logo
+        try {
+            $conn->prepare("DELETE FROM documents WHERE candidate_id = ? AND type = 'company_logo'")
+                 ->execute([$user_id]);
+            $logo_filename = null;
+        } catch (Exception $e) {
+            // Silently continue
+            $logo_filename = null;
+        }
+    }
+
+    if (empty($error_msg)) {
+        try {
+            // Update employers table
+            $stmt = $conn->prepare("
+                UPDATE employers 
+                SET company_name = ?, 
+                    website = ?, 
+                    location = ?, 
+                    industry = ?, 
+                    description = ?, 
+                    phone = ?, 
+                    logo = ?
+                WHERE id = ?
+            ");
+            
+            $stmt->execute([
+                $company_name, 
+                $website, 
+                $location, 
+                $industry, 
+                $description, 
+                $phone, 
+                $logo_filename,
+                $user_id
+            ]);
+            
+            $success_msg = "✅ Company profile updated successfully!";
+            
+            // Refresh user data
+            $stmt = $conn->prepare("SELECT * FROM employers WHERE id = ?");
+            $stmt->execute([$user_id]);
+            $user = $stmt->fetch();
+            
+        } catch (PDOException $e) {
+            $error_msg = "Error saving profile: " . $e->getMessage();
+        }
+    }
+}
+
+// Get company logo URL
+function get_company_logo_url($user_id, $conn) {
+    try {
+        $stmt = $conn->prepare("SELECT logo FROM employers WHERE id = ?");
+        $stmt->execute([$user_id]);
+        $employer = $stmt->fetch();
+        
+        if (!empty($employer['logo'])) {
+            // Check if it's a base64 encoded image
+            if (strpos($employer['logo'], 'data:image') === 0) {
+                return $employer['logo'];
+            }
+            
+            // Check if it's stored in documents table
+            $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
+                                    WHERE candidate_id = ? AND file_path = ? AND type = 'company_logo' 
+                                    ORDER BY uploaded_at DESC LIMIT 1");
+            $stmt->execute([$user_id, $employer['logo']]);
+            $result = $stmt->fetch();
+            
+            if ($result && !empty($result['file_content'])) {
+                return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
+            }
+        }
+    } catch (PDOException $e) {
+        // Fall through to default
+    }
+    
+    // Default logo using UI Avatars
+    $stmt = $conn->prepare("SELECT company_name FROM employers WHERE id = ?");
+    $stmt->execute([$user_id]);
+    $employer = $stmt->fetch();
+    $name = urlencode($employer['company_name'] ?? 'Company');
+    return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
+}
 ?>
 
-<div class="container mt-2 mb-2">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Company Profile - DigiCareer</title>
+    <style>
+        .logo-preview {
+            width: 120px;
+            height: 120px;
+            border-radius: 12px;
+            object-fit: contain;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background: white;
+            padding: 10px;
+        }
+        .form-section {
+            background: #f8fafc;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            border: 1px solid #e2e8f0;
+        }
+        .logo-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .remove-logo-btn {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            cursor: pointer;
+            margin-top: 10px;
+            display: inline-block;
+            text-decoration: none;
+        }
+        .remove-logo-btn:hover {
+            background: #f1b0b7;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        @media (max-width: 768px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container mt-4">
     <div class="row" style="display: grid; grid-template-columns: 250px 1fr; gap: 2rem;">
         <!-- Sidebar -->
         <aside>
-            <div class="card">
-                <div class="text-center mb-2">
+            <div class="card" style="position: sticky; top: 20px;">
+                <div class="text-center mb-3">
                     <?php
-                    $logo_url = (isset($user['logo']) && $user['logo']) ? 'uploads/logos/' . $user['logo'] : "https://ui-avatars.com/api/?name=" . urlencode($user['company_name']) . "&background=0ea5e9&color=fff";
+                    $logo_url = get_company_logo_url($user_id, $conn);
                     ?>
-                    <img src="<?php echo $logo_url; ?>" alt="Company"
-                        style="width: 80px; height: 80px; border-radius: var(--radius-lg); margin: 0 auto 1rem; object-fit: contain; border: 1px solid #e2e8f0;">
-                    <h4><?php echo sanitize($user['company_name']); ?></h4>
+                    <img src="<?php echo $logo_url; ?>" alt="Company Logo" class="logo-preview" id="logoPreview">
+                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo htmlspecialchars($user['company_name']); ?></h4>
+                    <p style="color: #666; font-size: 0.9em;">
+                        <?php echo htmlspecialchars($user['industry'] ?? 'No industry specified'); ?>
+                    </p>
+                    <div style="font-size: 0.8em; color: #666; margin-top: 0.5rem;">
+                        <span style="background: #e7f3ff; padding: 2px 8px; border-radius: 12px;">
+                            Employer
+                        </span>
+                    </div>
                 </div>
-                <!-- ... Sidebar Menu ... -->
-                <ul style="list-style: none;">
-                    <li style="margin-bottom: 0.5rem;"><a href="employer_dashboard.php"
-                            style="color: var(--text-main);">Dashboard</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="employer_profile.php"
-                            style="color: var(--secondary); font-weight: 600;">Edit Profile</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="employer_post_job.php"
-                            style="color: var(--text-main);">Post a Job</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="employer_applications.php"
-                            style="color: var(--text-main);">Applications</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="candidates.php" style="color: var(--text-main);">Search
-                            Candidates</a></li>
-                    <li style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;"><a href="logout.php"
-                            style="color: var(--danger);">Logout</a></li>
+                <ul style="list-style: none; padding: 0;">
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="employer_dashboard.php"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
+                           📊 Dashboard
+                        </a>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="employer_profile.php"
+                           style="color: #007bff; font-weight: 600; text-decoration: none; display: block; padding: 10px; border-radius: 5px; background-color: #e7f3ff;"
+                           onmouseover="this.style.backgroundColor='#d9ebff'" onmouseout="this.style.backgroundColor='#e7f3ff'">
+                           🏢 Company Profile
+                        </a>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="employer_post_job.php"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
+                           📝 Post a Job
+                        </a>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="employer_applications.php"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
+                           📄 Applications
+                        </a>
+                    </li>
+                    <li style="margin-bottom: 0.5rem;">
+                        <a href="candidates.php"
+                           style="color: #333; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
+                           🔍 Search Candidates
+                        </a>
+                    </li>
+                    <li style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
+                        <a href="logout.php"
+                           style="color: #dc3545; text-decoration: none; display: block; padding: 10px; border-radius: 5px;"
+                           onmouseover="this.style.backgroundColor='#ffe6e6'" onmouseout="this.style.backgroundColor='transparent'">
+                           🚪 Logout
+                        </a>
+                    </li>
                 </ul>
             </div>
         </aside>
@@ -100,73 +314,183 @@ $user = $stmt->fetch();
         <!-- Main Content -->
         <main>
             <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <h2 style="margin: 0;">Edit Company Profile</h2>
-                    <a href="employer_details.php?id=<?php echo $user_id; ?>" target="_blank"
-                        class="btn btn-outline">Preview Public Profile</a>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h1 style="margin: 0; font-size: 1.8rem;">Edit Company Profile</h1>
+                    <a href="employer_dashboard.php" class="btn btn-outline" style="text-decoration: none; padding: 8px 16px; border: 1px solid #ddd; border-radius: 5px;">
+                        ← Back to Dashboard
+                    </a>
                 </div>
 
                 <?php if ($success_msg): ?>
-                    <div class="alert alert-success"><?php echo $success_msg; ?></div>
+                    <div class="alert alert-success" style="padding: 12px; background: #d4edda; color: #155724; border-radius: 5px; margin-bottom: 20px;">
+                        ✅ <?php echo $success_msg; ?>
+                    </div>
                 <?php endif; ?>
+                
                 <?php if ($error_msg): ?>
-                    <div class="alert alert-error"><?php echo $error_msg; ?></div>
+                    <div class="alert alert-error" style="padding: 12px; background: #f8d7da; color: #721c24; border-radius: 5px; margin-bottom: 20px;">
+                        ❌ <?php echo $error_msg; ?>
+                    </div>
                 <?php endif; ?>
 
-                <form method="POST" action="employer_profile.php" enctype="multipart/form-data">
-                    <div class="form-group"
-                        style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                        <label class="form-label">Company Logo</label>
-                        <div style="display: flex; align-items: center; gap: 1rem;">
-                            <img src="<?php echo $logo_url; ?>"
-                                style="width: 60px; height: 60px; border-radius: 8px; object-fit: contain; border: 1px solid #e2e8f0; background: white;">
-                            <input type="file" name="logo" class="form-control" accept="image/*" style="flex: 1;">
+                <form method="POST" action="employer_profile.php" enctype="multipart/form-data" id="profileForm">
+                    
+                    <!-- Company Logo Section -->
+                    <div class="form-section">
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Company Logo</h3>
+                        <div class="logo-controls">
+                            <div style="margin-bottom: 1rem; text-align: center;">
+                                <img src="<?php echo get_company_logo_url($user_id, $conn); ?>" 
+                                     alt="Current Logo" style="width: 150px; height: 150px; border-radius: 12px; object-fit: contain; margin-bottom: 10px; border: 3px solid #ddd; padding: 10px; background: white;"
+                                     id="currentLogo">
+                            </div>
+                            
+                            <input type="file" name="logo" id="logoInput" 
+                                   accept="image/*" style="margin-bottom: 10px; padding: 8px; width: 100%; max-width: 300px;">
+                            
+                            <?php if (!empty($user['logo'])): ?>
+                            <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer;">
+                                <input type="checkbox" name="remove_logo" value="1" id="removeLogo">
+                                <span style="font-size: 0.9em; color: #721c24;">🗑️ Remove current logo</span>
+                            </label>
+                            <?php endif; ?>
+                            
+                            <div style="font-size: 0.85em; color: #666; margin-top: 5px; text-align: center;">
+                                <strong>Upload Tips:</strong><br>
+                                • Max 2MB (500KB recommended)<br>
+                                • Use JPG, PNG, GIF, or SVG format<br>
+                                • Logo will be displayed on your job postings
+                            </div>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Company Name</label>
-                        <input type="text" name="company_name" class="form-control"
-                            value="<?php echo sanitize($user['company_name']); ?>" required>
+                    <!-- Company Information -->
+                    <div class="form-section">
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #28a745; padding-bottom: 10px;">Company Information</h3>
+                        
+                        <div class="form-grid" style="margin-top: 1rem;">
+                            <div class="form-group">
+                                <label class="form-label" style="font-weight: 500; display: block; margin-bottom: 5px;">Company Name *</label>
+                                <input type="text" name="company_name" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                                    value="<?php echo htmlspecialchars($user['company_name']); ?>" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label" style="font-weight: 500; display: block; margin-bottom: 5px;">Website</label>
+                                <input type="url" name="website" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                                    value="<?php echo htmlspecialchars($user['website'] ?? ''); ?>"
+                                    placeholder="https://example.com">
+                            </div>
+                        </div>
+                        
+                        <div class="form-grid" style="margin-top: 1.5rem;">
+                            <div class="form-group">
+                                <label class="form-label" style="font-weight: 500; display: block; margin-bottom: 5px;">Location</label>
+                                <input type="text" name="location" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                                    value="<?php echo htmlspecialchars($user['location'] ?? ''); ?>"
+                                    placeholder="e.g. Niamey, Niger">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label" style="font-weight: 500; display: block; margin-bottom: 5px;">Industry</label>
+                                <input type="text" name="industry" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                                    value="<?php echo htmlspecialchars($user['industry'] ?? ''); ?>"
+                                    placeholder="e.g. Technology, Education, Healthcare">
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 1.5rem;">
+                            <div class="form-group">
+                                <label class="form-label" style="font-weight: 500; display: block; margin-bottom: 5px;">Phone Number</label>
+                                <input type="tel" name="phone" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                                    value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>"
+                                    placeholder="+227 XX XX XX XX">
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Website</label>
-                        <input type="url" name="website" class="form-control"
-                            value="<?php echo sanitize($user['website'] ?? ''); ?>" placeholder="https://example.com">
+                    <!-- Company Description -->
+                    <div class="form-section">
+                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #fd7e14; padding-bottom: 10px;">About Company</h3>
+                        
+                        <div style="margin-top: 1rem;">
+                            <label class="form-label" style="font-weight: 500; display: block; margin-bottom: 5px;">Company Description</label>
+                            <textarea name="description" class="form-control" rows="6" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                                placeholder="Describe your company's mission, values, culture, and what makes you a great place to work..."><?php echo htmlspecialchars($user['description'] ?? ''); ?></textarea>
+                            <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
+                                This description appears on your job postings and company profile.
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Location</label>
-                        <input type="text" name="location" class="form-control"
-                            value="<?php echo sanitize($user['location'] ?? ''); ?>" placeholder="e.g. Niamey, Niger">
+                    <!-- Form Actions -->
+                    <div style="display: flex; gap: 1rem; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0;">
+                        <button type="submit" class="btn btn-primary" style="padding: 12px 24px; font-weight: 500; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                            💾 Save Company Profile
+                        </button>
+                        <button type="reset" class="btn btn-outline" style="padding: 12px 24px; background: white; border: 1px solid #ddd; border-radius: 5px; cursor: pointer;">
+                            ↩️ Reset Changes
+                        </button>
+                        <a href="employer_dashboard.php" class="btn btn-outline" style="padding: 12px 24px; text-decoration: none; background: white; border: 1px solid #ddd; border-radius: 5px;">
+                            ❌ Cancel
+                        </a>
                     </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Industry</label>
-                        <input type="text" name="industry" class="form-control"
-                            value="<?php echo sanitize($user['industry'] ?? ''); ?>"
-                            placeholder="e.g. Technology, Education">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Phone</label>
-                        <input type="text" name="phone" class="form-control"
-                            value="<?php echo sanitize($user['phone'] ?? ''); ?>">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">About Company</label>
-                        <textarea name="description" class="form-control" rows="5"
-                            placeholder="Describe your company..."><?php echo sanitize($user['description'] ?? ''); ?></textarea>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                    <a href="employer_dashboard.php" class="btn btn-outline" style="margin-left: 1rem;">Cancel</a>
                 </form>
             </div>
         </main>
     </div>
 </div>
+
+<script>
+// Preview logo before upload
+document.getElementById('logoInput').addEventListener('change', function() {
+    if (this.files && this.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('logoPreview').src = e.target.result;
+            document.getElementById('currentLogo').src = e.target.result;
+            // Uncheck remove logo if selecting new one
+            if (document.getElementById('removeLogo')) {
+                document.getElementById('removeLogo').checked = false;
+            }
+        }
+        reader.readAsDataURL(this.files[0]);
+    }
+});
+
+// When remove logo is checked
+document.getElementById('removeLogo')?.addEventListener('change', function() {
+    if (this.checked) {
+        document.getElementById('logoInput').value = '';
+        // Show default logo
+        const defaultLogo = '<?php echo get_company_logo_url($user_id, $conn); ?>';
+        document.getElementById('logoPreview').src = defaultLogo;
+        document.getElementById('currentLogo').src = defaultLogo;
+    }
+});
+
+// Form validation
+document.getElementById('profileForm').addEventListener('submit', function(e) {
+    const companyName = this.querySelector('input[name="company_name"]').value.trim();
+    
+    if (!companyName) {
+        e.preventDefault();
+        alert('Please enter your Company Name');
+        return false;
+    }
+    
+    const fileInput = this.querySelector('input[name="logo"]');
+    if (fileInput.files.length > 0) {
+        const fileSize = fileInput.files[0].size / 1024 / 1024;
+        if (fileSize > 2) {
+            e.preventDefault();
+            alert('Logo must be less than 2MB');
+            return false;
+        }
+    }
+    
+    return true;
+});
+</script>
 
 <?php require_once 'includes/footer.php'; ?>
