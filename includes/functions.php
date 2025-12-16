@@ -100,7 +100,12 @@ function require_login()
  * Upload a file - FIXED VERSION for shared hosting
  * returns path on success or false on failure
  */
-function upload_file($file, $destination_folder = 'uploads/')
+/**
+ * Upload a file - ULTIMATE FIX for strict shared hosting
+ * Stores file in PHP temp directory (always writable)
+ * Saves file content as BLOB in database
+ */
+function upload_file($file, $conn)  // Added $conn parameter
 {
     // Allowed extensions
     $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
@@ -119,37 +124,80 @@ function upload_file($file, $destination_folder = 'uploads/')
     // Generate unique name
     $new_name = uniqid('doc_', true) . '.' . $ext;
 
-    // CRITICAL FIX: Use HOME directory instead of web root
-    // This directory ALWAYS has write permissions for your user
-    $home_dir = $_SERVER['HOME'] ?? '/home/fannareme.abdou';
-    $upload_dir = $home_dir . '/my_uploads/';
-
-    // Create directory if not exists
-    if (!is_dir($upload_dir)) {
-        if (!mkdir($upload_dir, 0755, true)) {
-            return ["error" => "Cannot create directory. Please manually create: $upload_dir"];
-        }
+    // METHOD 1: Store file content directly in database (BLOB)
+    $file_content = file_get_contents($filetmp);
+    
+    if ($file_content === false) {
+        return ["error" => "Cannot read uploaded file."];
     }
 
-    $destination = $upload_dir . $new_name;
+    // Return success with file content
+    return [
+        "success" => true, 
+        "path" => $new_name,
+        "original_name" => $filename,
+        "content" => $file_content,  // File content for database
+        "size" => $file['size'],
+        "type" => $file['type']
+    ];
+}
 
-    // Debug info (remove in production)
-    error_log("Upload attempt: $filetmp to $destination");
-    error_log("Directory writable: " . (is_writable($upload_dir) ? 'Yes' : 'No'));
-
-    if (move_uploaded_file($filetmp, $destination)) {
-        // Store relative path for database
-        return ["success" => true, "path" => 'my_uploads/' . $new_name, "full_path" => $destination];
-    } else {
-        // Try alternative method if move_uploaded_file fails
-        if (copy($filetmp, $destination)) {
-            return ["success" => true, "path" => 'my_uploads/' . $new_name, "full_path" => $destination];
-        }
-        
-        $error = error_get_last();
-        return ["error" => "Upload failed. Last error: " . ($error['message'] ?? 'Unknown') . 
-                " | TMP: $filetmp | DEST: $destination"];
+/**
+ * Save file to database (new function)
+ */
+function save_file_to_db($conn, $user_id, $type, $file_data)
+{
+    try {
+        $stmt = $conn->prepare("INSERT INTO documents (candidate_id, type, file_path, original_name, file_content, file_size, mime_type) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([
+            $user_id, 
+            $type, 
+            $file_data['path'], 
+            $file_data['original_name'],
+            $file_data['content'],
+            $file_data['size'],
+            $file_data['type']
+        ]);
+        return $conn->lastInsertId();
+    } catch (PDOException $e) {
+        error_log("Database save error: " . $e->getMessage());
+        return false;
     }
+}
+
+/**
+ * Get file from database
+ */
+function get_file_from_db($conn, $file_id, $user_id = null)
+{
+    $sql = "SELECT * FROM documents WHERE id = ?";
+    $params = [$file_id];
+    
+    if ($user_id) {
+        $sql .= " AND candidate_id = ?";
+        $params[] = $user_id;
+    }
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Delete file from database
+ */
+function delete_file_from_db($conn, $file_id, $user_id = null)
+{
+    $sql = "DELETE FROM documents WHERE id = ?";
+    $params = [$file_id];
+    
+    if ($user_id) {
+        $sql .= " AND candidate_id = ?";
+        $params[] = $user_id;
+    }
+    
+    $stmt = $conn->prepare($sql);
+    return $stmt->execute($params);
 }
 /**
  * Flash message helper (Set or Get)
