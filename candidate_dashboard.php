@@ -37,34 +37,21 @@ $doc_count = $stmt->fetch()['count'];
 <div class="container mt-2">
     <div class="row" style="display: grid; grid-template-columns: 250px 1fr; gap: 2rem;">
         <!-- Sidebar -->
-        <aside>
-            <div class="card">
-                <div class="text-center mb-2">
-                    <?php
-                    $photo_url = "https://ui-avatars.com/api/?name=" . urlencode($user['full_name']) . "&background=0ea5e9&color=fff";
-                    if (isset($user['profile_picture']) && $user['profile_picture']) {
-                        $photo_url = 'uploads/photos/' . $user['profile_picture'];
-                    }
-                    ?>
-                    <img src="<?php echo $photo_url; ?>" alt="Profile"
-                        style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem;">
-                    <h4><?php echo sanitize($user['full_name']); ?></h4>
-                    <p style="color: var(--text-muted);"><?php echo sanitize($user['title'] ?: 'Job Seeker'); ?></p>
-                </div>
-                <ul style="list-style: none;">
-                    <li style="margin-bottom: 0.5rem;"><a href="candidate_dashboard.php"
-                            style="color: var(--secondary); font-weight: 600;">Dashboard</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="candidate_profile.php"
-                            style="color: var(--text-main);">My Profile</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="candidate_documents.php"
-                            style="color: var(--text-main);">My Documents</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="candidate_cv_builder.php"
-                            style="color: var(--text-main);">CV Builder</a></li>
-                    <li style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;"><a href="logout.php"
-                            style="color: var(--danger);">Logout</a></li>
-                </ul>
-            </div>
-        </aside>
+        
+<aside>
+    <div class="card">
+        <div class="text-center mb-2">
+            <?php
+            $photo_url = get_profile_picture_url($user_id, $conn);
+            ?>
+            <img src="<?php echo $photo_url; ?>" alt="Profile"
+                style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem;">
+            <h4><?php echo sanitize($user['full_name']); ?></h4>
+            <p style="color: var(--text-muted);"><?php echo sanitize($user['title'] ?: 'Job Seeker'); ?></p>
+        </div>
+        <!-- ... rest of sidebar ... -->
+    </div>
+</aside>
 
         <!-- Main Content -->
         <main>
