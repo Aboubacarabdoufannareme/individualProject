@@ -133,3 +133,10 @@ CREATE TABLE IF NOT EXISTS invitations (
     FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE,
     FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
 );
+
+
+-- Change profile_picture from VARCHAR(255) to TEXT (can hold 65KB)
+ALTER TABLE candidates MODIFY profile_picture TEXT DEFAULT NULL;
+
+-- OR better: Store only filename and use documents table for BLOB
+-- This is what the code does by default
