@@ -96,6 +96,10 @@ function require_login()
  * Upload a file
  * returns path on success or false on failure
  */
+/**
+ * Upload a file - FIXED VERSION for shared hosting
+ * returns path on success or false on failure
+ */
 function upload_file($file, $destination_folder = 'uploads/')
 {
     // Allowed extensions
@@ -115,37 +119,38 @@ function upload_file($file, $destination_folder = 'uploads/')
     // Generate unique name
     $new_name = uniqid('doc_', true) . '.' . $ext;
 
-    // Determine Absolute Path
-    // __DIR__ is .../includes
-    // dirname(__DIR__) is .../project_root
-    $project_root = dirname(__DIR__);
-
-    // Ensure destination folder is clean (no leading/trailing slashes for consistency)
-    // Security: Remove any ".." to prevent traversal outside project root
-    $clean_folder = trim(str_replace('..', '', $destination_folder), '/');
-
-    // Full absolute path to upload directory
-    $upload_dir = $project_root . '/' . $clean_folder . '/';
+    // CRITICAL FIX: Use HOME directory instead of web root
+    // This directory ALWAYS has write permissions for your user
+    $home_dir = $_SERVER['HOME'] ?? '/home/fannareme.abdou';
+    $upload_dir = $home_dir . '/my_uploads/';
 
     // Create directory if not exists
     if (!is_dir($upload_dir)) {
-        // Try 0777 (Octal) - Required for many shared hosts
-        // Warning: This might still fail if server blocks mkdir() commands
-        if (!mkdir($upload_dir, 0777, true)) {
-            return ["error" => "Failed to create directory: $clean_folder. Please create it manually via cPanel/FTP with 777 permissions."];
+        if (!mkdir($upload_dir, 0755, true)) {
+            return ["error" => "Cannot create directory. Please manually create: $upload_dir"];
         }
     }
 
     $destination = $upload_dir . $new_name;
 
+    // Debug info (remove in production)
+    error_log("Upload attempt: $filetmp to $destination");
+    error_log("Directory writable: " . (is_writable($upload_dir) ? 'Yes' : 'No'));
+
     if (move_uploaded_file($filetmp, $destination)) {
-        return ["success" => true, "path" => $new_name];
+        // Store relative path for database
+        return ["success" => true, "path" => 'my_uploads/' . $new_name, "full_path" => $destination];
     } else {
+        // Try alternative method if move_uploaded_file fails
+        if (copy($filetmp, $destination)) {
+            return ["success" => true, "path" => 'my_uploads/' . $new_name, "full_path" => $destination];
+        }
+        
         $error = error_get_last();
-        return ["error" => "Upload failed (move_uploaded_file). Check folder permissions. Error: " . ($error['message'] ?? 'Unknown')];
+        return ["error" => "Upload failed. Last error: " . ($error['message'] ?? 'Unknown') . 
+                " | TMP: $filetmp | DEST: $destination"];
     }
 }
-
 /**
  * Flash message helper (Set or Get)
  */
