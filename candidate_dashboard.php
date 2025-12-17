@@ -77,6 +77,17 @@ try {
 } catch (PDOException $e) {
     error_log("Invitations error: " . $e->getMessage());
 }
+
+// Check profile picture status
+$profile_pic_count = 0;
+try {
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic'");
+    $stmt->execute([$user_id]);
+    $result = $stmt->fetch();
+    $profile_pic_count = $result['count'] ?? 0;
+} catch (Exception $e) {
+    error_log("Profile pic count error: " . $e->getMessage());
+}
 ?>
 
 <div class="container mt-4">
@@ -99,6 +110,15 @@ try {
                             Candidate
                         </span>
                     </div>
+                    
+                    <!-- PREVIEW PROFILE BUTTON -->
+                    <a href="candidate_details.php?id=<?php echo $user_id; ?>" 
+                       target="_blank"
+                       style="display: inline-block; margin-top: 1rem; padding: 8px 16px; background: #6f42c1; color: white; text-decoration: none; border-radius: 5px; font-size: 0.85em; font-weight: 500;"
+                       onmouseover="this.style.backgroundColor='#5a32a3'" onmouseout="this.style.backgroundColor='#6f42c1'"
+                       title="See how employers view your profile">
+                       👁️ Preview Profile
+                    </a>
                 </div>
                 <ul style="list-style: none; padding: 0;">
                     <li style="margin-bottom: 0.5rem;">
@@ -152,9 +172,17 @@ try {
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                     <h1 style="margin: 0; font-size: 1.8rem;">Dashboard Overview</h1>
-                    <a href="jobs.php" class="btn btn-primary" style="text-decoration: none; padding: 8px 16px; background: #007bff; color: white; border-radius: 5px;">
-                        🔍 Find Jobs
-                    </a>
+                    <div style="display: flex; gap: 10px;">
+                        <a href="candidate_details.php?id=<?php echo $user_id; ?>" 
+                           target="_blank"
+                           style="text-decoration: none; padding: 8px 16px; background: #6f42c1; color: white; border-radius: 5px; font-weight: 500;"
+                           onmouseover="this.style.backgroundColor='#5a32a3'" onmouseout="this.style.backgroundColor='#6f42c1'">
+                           👁️ Preview Profile
+                        </a>
+                        <a href="jobs.php" class="btn btn-primary" style="text-decoration: none; padding: 8px 16px; background: #007bff; color: white; border-radius: 5px;">
+                            🔍 Find Jobs
+                        </a>
+                    </div>
                 </div>
 
                 <!-- Stats -->
@@ -192,20 +220,17 @@ try {
                         <h5 style="color: #666; font-size: 0.9rem; margin-bottom: 0.5rem;">Profile</h5>
                         <p style="font-size: 2rem; font-weight: 700; color: #6f42c1; margin: 0;">
                             <?php 
-                            // Check if profile picture exists
-                            try {
-                                $stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic'");
-                                $stmt->execute([$user_id]);
-                                $profile_pic_count = $stmt->fetch()['count'] ?? 0;
-                                echo ($profile_pic_count > 0 && ($user['visibility'] ?? 'visible') === 'visible') ? '👁️' : '👤';
-                            } catch (Exception $e) {
-                                echo '👤';
-                            }
+                            echo ($profile_pic_count > 0 && ($user['visibility'] ?? 'visible') === 'visible') ? '👁️' : '👤';
                             ?>
                         </p>
-                        <a href="candidate_profile.php" style="font-size: 0.85em; color: #666; text-decoration: none;">
-                            Edit profile →
-                        </a>
+                        <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px;">
+                            <a href="candidate_profile.php" style="font-size: 0.85em; color: #666; text-decoration: none;">
+                                Edit profile →
+                            </a>
+                            <a href="candidate_details.php?id=<?php echo $user_id; ?>" target="_blank" style="font-size: 0.85em; color: #6f42c1; text-decoration: none; font-weight: 500;">
+                                Preview →
+                            </a>
+                        </div>
                     </div>
                 </div>
 
@@ -362,6 +387,19 @@ try {
                                 <div style="font-size: 0.85em; color: #666; margin-top: 5px;">Edit your information</div>
                             </div>
                         </a>
+                        
+                        <!-- PREVIEW PROFILE QUICK ACTION -->
+                        <a href="candidate_details.php?id=<?php echo $user_id; ?>" 
+                           target="_blank"
+                           style="text-decoration: none;">
+                            <div style="background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center;"
+                                 onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'">
+                                <div style="font-size: 2em; margin-bottom: 10px;">👁️</div>
+                                <div style="font-weight: 600; color: #333;">Preview Profile</div>
+                                <div style="font-size: 0.85em; color: #666; margin-top: 5px;">See how employers view you</div>
+                            </div>
+                        </a>
+                        
                         <a href="candidate_documents.php" style="text-decoration: none;">
                             <div style="background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center;"
                                  onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'">
@@ -378,19 +416,24 @@ try {
                                 <div style="font-size: 0.85em; color: #666; margin-top: 5px;">Create professional CV</div>
                             </div>
                         </a>
-                        <a href="jobs.php" style="text-decoration: none;">
-                            <div style="background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center;"
-                                 onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'">
-                                <div style="font-size: 2em; margin-bottom: 10px;">🔍</div>
-                                <div style="font-weight: 600; color: #333;">Find Jobs</div>
-                                <div style="font-size: 0.85em; color: #666; margin-top: 5px;">Browse opportunities</div>
-                            </div>
-                        </a>
                     </div>
                 </div>
             </div>
         </main>
     </div>
+</div>
+
+<!-- Floating Preview Button -->
+<div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
+    <a href="candidate_details.php?id=<?php echo $user_id; ?>" 
+       target="_blank"
+       style="display: flex; align-items: center; gap: 8px; padding: 12px 20px; background: #6f42c1; color: white; text-decoration: none; border-radius: 30px; box-shadow: 0 4px 12px rgba(111, 66, 193, 0.3); font-weight: 500;"
+       onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(111, 66, 193, 0.4)';"
+       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(111, 66, 193, 0.3)';"
+       title="See how employers view your profile">
+        <span style="font-size: 1.2em;">👁️</span>
+        <span>Preview Profile</span>
+    </a>
 </div>
 
 <?php require_once 'includes/footer.php'; ?>
