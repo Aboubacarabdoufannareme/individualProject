@@ -227,41 +227,37 @@ function get_role()
 /**
  * Get profile picture URL from database
  */
-function get_profile_picture_url($user_id, $conn) {
-    // First check if profile_picture column exists in candidates
-    try {
-        /*
-            $stmt = $conn->prepare("SELECT profile_picture FROM candidates WHERE id = ?");
-        $stmt->execute([$user_id]);
-        $user = $stmt->fetch();
-        **/
 
+/**
+ * Get profile picture URL from database
+ */
+function get_profile_picture_url($user_id, $conn) {
+    try {
+        // Try to get profile picture from documents table
         $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
-                            WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic' 
-                            ORDER BY uploaded_at DESC LIMIT 1");
-    $stmt->execute([$user_id]);
+                                WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic' 
+                                ORDER BY uploaded_at DESC LIMIT 1");
+        $stmt->execute([$user_id]);
+        $result = $stmt->fetch();
         
-        if (!empty($user['profile_picture'])) {
-            // Check if it's stored in documents table
-            $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
-                                    WHERE candidate_id = ? AND type = 'profile_pic' 
-                                    ORDER BY uploaded_at DESC LIMIT 1");
-            $stmt->execute([$user_id]);
-            $result = $stmt->fetch();
-            
-            if ($result && !empty($result['file_content'])) {
-                return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
-            }
+        if ($result && !empty($result['file_content'])) {
+            // Return as data URL
+            return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
         }
     } catch (PDOException $e) {
-        // Fall through to default
+        error_log("Profile picture fetch error: " . $e->getMessage());
     }
     
-    // Default avatar
-    $stmt = $conn->prepare("SELECT full_name FROM candidates WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $user = $stmt->fetch();
-    $name = urlencode($user['full_name'] ?? 'User');
-    return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
+    // Default avatar if no custom picture found
+    try {
+        $stmt = $conn->prepare("SELECT full_name FROM candidates WHERE id = ?");
+        $stmt->execute([$user_id]);
+        $user = $stmt->fetch();
+        $name = urlencode($user['full_name'] ?? 'User');
+        return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
+    } catch (Exception $e) {
+        // Fallback to generic avatar
+        return "https://ui-avatars.com/api/?name=User&background=0ea5e9&color=fff&size=128";
+    }
 }
 ?>
