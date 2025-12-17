@@ -1,5 +1,5 @@
 <?php
-// candidates.php - FIXED VERSION
+// candidates.php - IMPROVED CARD DESIGN
 require_once 'includes/header.php';
 
 $search = isset($_GET['q']) ? sanitize($_GET['q']) : '';
@@ -31,6 +31,9 @@ $sql .= " ORDER BY created_at DESC";
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $candidates = $stmt->fetchAll();
+
+// Calculate found count
+$found_count = count($candidates);
 ?>
 
 <div class="header-banner"
@@ -60,95 +63,226 @@ $candidates = $stmt->fetchAll();
 </div>
 
 <div class="container mt-4 mb-4">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-        <h2 style="margin: 0; color: #333;">
-            Candidates 
-            <?php if (count($candidates) > 0): ?>
-            <span style="background: #e7f3ff; color: #007bff; padding: 4px 12px; border-radius: 20px; font-size: 0.9em; margin-left: 10px;">
-                <?php echo count($candidates); ?> found
+    <!-- Results Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid #f1f5f9;">
+        <h2 style="margin: 0; color: #333; display: flex; align-items: center; gap: 10px;">
+            <span>Available Candidates</span>
+            <?php if ($found_count > 0): ?>
+            <span style="background: #e7f3ff; color: #007bff; padding: 6px 14px; border-radius: 20px; font-size: 0.9em; font-weight: 600;">
+                <?php echo $found_count; ?> candidate<?php echo $found_count !== 1 ? 's' : ''; ?> found
             </span>
             <?php endif; ?>
         </h2>
         <?php if (is_logged_in() && get_role() === 'employer'): ?>
-        <div style="font-size: 0.9em; color: #666;">
-            👁️ Viewing as Employer
+        <div style="font-size: 0.9em; color: #666; display: flex; align-items: center; gap: 8px;">
+            <span style="width: 10px; height: 10px; background: #28a745; border-radius: 50%;"></span>
+            Employer View
         </div>
         <?php endif; ?>
     </div>
 
-    <?php if (count($candidates) > 0): ?>
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem;">
+    <?php if ($found_count > 0): ?>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.75rem;">
             <?php foreach ($candidates as $c): ?>
-                <div class="card" style="display: flex; flex-direction: column; height: 100%; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s;"
-                     onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 25px rgba(0,0,0,0.1)';"
-                     onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none';">
+                <div class="card" 
+                     style="border: 1px solid #e2e8f0; 
+                            border-radius: 12px; 
+                            overflow: hidden; 
+                            transition: all 0.3s ease;
+                            background: white;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.04);"
+                     onmouseover="this.style.transform='translateY(-5px)';this.style.boxShadow='0 10px 30px rgba(0,0,0,0.08)';"
+                     onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.04)';">
                     
-                    <!-- Candidate Header -->
-                    <div style="padding: 1.5rem; display: flex; gap: 1rem; align-items: flex-start; border-bottom: 1px solid #f1f5f9; background: linear-gradient(to right, #f8fafc, #ffffff);">
-                        <?php
-                        // FIXED: Use get_profile_picture_url() function from includes/functions.php
-                        $photo_url = get_profile_picture_url($c['id'], $conn);
-                        ?>
-                        <img src="<?php echo $photo_url; ?>" alt="Profile"
-                            style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"
-                            onerror="this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($c['full_name'] ?? 'Candidate'); ?>&background=0ea5e9&color=fff&size=128'">
-                        <div style="flex: 1;">
-                            <h4 style="margin: 0 0 5px 0; font-size: 1.2rem; color: #333;"><?php echo htmlspecialchars($c['full_name']); ?></h4>
-                            <p style="color: #007bff; font-weight: 500; margin: 0 0 8px 0;">
-                                <?php echo htmlspecialchars($c['title'] ?: 'Job Seeker'); ?>
-                            </p>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-size: 0.85em; color: #666; background: #f1f5f9; padding: 3px 8px; border-radius: 12px;">
-                                    <?php echo $c['education_level'] ? htmlspecialchars($c['education_level']) : 'Education not specified'; ?>
-                                </span>
-                                <?php if (!empty($c['visibility']) && $c['visibility'] === 'visible'): ?>
-                                <span style="font-size: 0.75em; background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 12px;">
-                                    👁️ Public
-                                </span>
-                                <?php endif; ?>
+                    <!-- Profile Header with Gradient -->
+                    <div style="
+                        padding: 1.75rem 1.75rem 1.25rem;
+                        background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+                        border-bottom: 1px solid #f1f5f9;
+                        position: relative;
+                    ">
+                        <!-- Profile Picture -->
+                        <div style="display: flex; align-items: flex-start; gap: 1.25rem;">
+                            <div style="position: relative;">
+                                <?php
+                                $photo_url = get_profile_picture_url($c['id'], $conn);
+                                ?>
+                                <img src="<?php echo $photo_url; ?>" 
+                                     alt="Profile"
+                                     style="width: 75px; 
+                                            height: 75px; 
+                                            border-radius: 50%; 
+                                            object-fit: cover; 
+                                            border: 4px solid white; 
+                                            box-shadow: 0 3px 12px rgba(0,0,0,0.08);">
+                                <!-- Online Status Indicator -->
+                                <div style="
+                                    position: absolute; 
+                                    bottom: 5px; 
+                                    right: 5px;
+                                    width: 12px; 
+                                    height: 12px; 
+                                    background: #28a745; 
+                                    border-radius: 50%; 
+                                    border: 2px solid white;
+                                "></div>
+                            </div>
+                            
+                            <!-- Candidate Info -->
+                            <div style="flex: 1; min-width: 0;">
+                                <h4 style="
+                                    margin: 0 0 6px 0; 
+                                    font-size: 1.25rem; 
+                                    color: #1e293b;
+                                    font-weight: 700;
+                                    white-space: nowrap;
+                                    overflow: hidden;
+                                    text-overflow: ellipsis;
+                                ">
+                                    <?php echo htmlspecialchars($c['full_name']); ?>
+                                </h4>
+                                
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                                    <span style="
+                                        color: #007bff; 
+                                        font-weight: 600; 
+                                        font-size: 0.95rem;
+                                        background: #e7f3ff;
+                                        padding: 4px 10px;
+                                        border-radius: 6px;
+                                        display: inline-block;
+                                    ">
+                                        <?php echo htmlspecialchars($c['title'] ?: 'Job Seeker'); ?>
+                                    </span>
+                                    
+                                    <?php if (!empty($c['visibility']) && $c['visibility'] === 'visible'): ?>
+                                    <span style="
+                                        font-size: 0.7em; 
+                                        background: #d4edda; 
+                                        color: #155724; 
+                                        padding: 3px 8px; 
+                                        border-radius: 10px;
+                                        font-weight: 500;
+                                    ">
+                                        Public
+                                    </span>
+                                    <?php endif; ?>
+                                </div>
+                                
+                                <!-- Education Badge -->
+                                <div style="
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 6px;
+                                    background: #f8fafc;
+                                    padding: 5px 12px;
+                                    border-radius: 20px;
+                                    border: 1px solid #e2e8f0;
+                                ">
+                                    <span style="color: #666; font-size: 0.85em;">
+                                        🎓
+                                    </span>
+                                    <span style="font-size: 0.85em; color: #475569; font-weight: 500;">
+                                        <?php echo $c['education_level'] ? htmlspecialchars($c['education_level']) : 'Education not specified'; ?>
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- Skills Section -->
-                    <div style="padding: 1.5rem; flex-grow: 1;">
-                        <h5 style="margin: 0 0 10px 0; color: #555; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px;">Skills</h5>
+                    <div style="padding: 1.25rem 1.75rem;">
+                        <div style="
+                            display: flex; 
+                            align-items: center; 
+                            gap: 8px; 
+                            margin-bottom: 12px;
+                            color: #64748b;
+                        ">
+                            <span style="font-size: 1.1em;">🔧</span>
+                            <h5 style="
+                                margin: 0; 
+                                font-size: 0.85rem; 
+                                text-transform: uppercase; 
+                                letter-spacing: 0.5px;
+                                font-weight: 600;
+                            ">
+                                Key Skills
+                            </h5>
+                        </div>
+                        
                         <?php if ($c['skills']): ?>
                             <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
                                 <?php 
                                 $skills = explode(',', $c['skills']);
-                                foreach (array_slice($skills, 0, 6) as $skill): 
+                                foreach (array_slice($skills, 0, 5) as $skill): 
                                     $trimmed_skill = trim($skill);
                                     if (!empty($trimmed_skill)):
                                 ?>
-                                    <span style="background: #e7f3ff; padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.85rem; color: #007bff; border: 1px solid #bae6fd;">
+                                    <span style="
+                                        background: #e7f3ff; 
+                                        padding: 6px 12px; 
+                                        border-radius: 20px; 
+                                        font-size: 0.85rem; 
+                                        color: #007bff; 
+                                        border: 1px solid #bae6fd;
+                                        font-weight: 500;
+                                    ">
                                         <?php echo htmlspecialchars($trimmed_skill); ?>
                                     </span>
                                 <?php 
                                     endif;
                                 endforeach; 
                                 ?>
-                                <?php if (count($skills) > 6): ?>
-                                    <span style="background: #f8f9fa; padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.85rem; color: #666;">
-                                        +<?php echo count($skills) - 6; ?> more
+                                <?php if (count($skills) > 5): ?>
+                                    <span style="
+                                        background: #f8fafc; 
+                                        padding: 6px 12px; 
+                                        border-radius: 20px; 
+                                        font-size: 0.85rem; 
+                                        color: #64748b;
+                                        border: 1px solid #e2e8f0;
+                                    ">
+                                        +<?php echo count($skills) - 5; ?> more
                                     </span>
                                 <?php endif; ?>
                             </div>
                         <?php else: ?>
-                            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center; color: #999;">
-                                <span style="font-style: italic;">No skills listed yet</span>
+                            <div style="
+                                background: #f8fafc; 
+                                padding: 1rem; 
+                                border-radius: 8px; 
+                                text-align: center; 
+                                color: #94a3b8;
+                                border: 1px dashed #e2e8f0;
+                            ">
+                                <span style="font-style: italic;">Skills not specified</span>
                             </div>
                         <?php endif; ?>
                     </div>
 
-                    <!-- Quick Bio Preview -->
+                    <!-- Bio Preview -->
                     <?php if ($c['bio']): ?>
-                    <div style="padding: 0 1.5rem; margin-bottom: 1rem;">
-                        <div style="font-size: 0.9em; color: #666; line-height: 1.5; max-height: 60px; overflow: hidden; position: relative;">
+                    <div style="
+                        padding: 0 1.75rem 1.25rem;
+                        border-bottom: 1px solid #f1f5f9;
+                    ">
+                        <div style="
+                            font-size: 0.9em; 
+                            color: #64748b; 
+                            line-height: 1.6; 
+                            max-height: 72px; 
+                            overflow: hidden;
+                            position: relative;
+                            padding: 0.75rem;
+                            background: #f8fafc;
+                            border-radius: 8px;
+                            border-left: 3px solid #007bff;
+                        ">
                             <?php 
                             $short_bio = strip_tags($c['bio']);
-                            if (strlen($short_bio) > 120) {
-                                $short_bio = substr($short_bio, 0, 120) . '...';
+                            if (strlen($short_bio) > 140) {
+                                $short_bio = substr($short_bio, 0, 140) . '...';
                             }
                             echo htmlspecialchars($short_bio);
                             ?>
@@ -157,26 +291,63 @@ $candidates = $stmt->fetchAll();
                     <?php endif; ?>
 
                     <!-- Action Button -->
-                    <div style="padding: 1.5rem; padding-top: 0; margin-top: auto;">
+                    <div style="padding: 1.25rem 1.75rem;">
                         <?php if (is_logged_in() && get_role() === 'employer'): ?>
                             <a href="candidate_details.php?id=<?php echo $c['id']; ?>" 
-                               class="btn btn-primary btn-block"
-                               style="display: block; text-align: center; background: #007bff; color: white; padding: 12px; border-radius: 8px; text-decoration: none; font-weight: 500; transition: background 0.2s;"
-                               onmouseover="this.style.backgroundColor='#0056b3'"
-                               onmouseout="this.style.backgroundColor='#007bff'">
-                                👤 View Full Profile
+                               style="
+                                    display: block; 
+                                    text-align: center; 
+                                    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); 
+                                    color: white; 
+                                    padding: 12px; 
+                                    border-radius: 8px; 
+                                    text-decoration: none; 
+                                    font-weight: 600;
+                                    font-size: 0.95rem;
+                                    transition: all 0.2s;
+                                    box-shadow: 0 2px 6px rgba(0,123,255,0.2);
+                               "
+                               onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,123,255,0.3)';"
+                               onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 2px 6px rgba(0,123,255,0.2)';">
+                                👁️ View Full Profile
                             </a>
                         <?php else: ?>
                             <div style="display: flex; gap: 10px;">
                                 <a href="login.php?redirect=candidate_details.php?id=<?php echo $c['id']; ?>" 
-                                   class="btn btn-outline"
-                                   style="flex: 1; text-align: center; border: 1px solid #007bff; color: #007bff; padding: 12px; border-radius: 8px; text-decoration: none; font-weight: 500;">
+                                   style="
+                                        flex: 1; 
+                                        text-align: center; 
+                                        border: 2px solid #007bff; 
+                                        color: #007bff; 
+                                        padding: 10px; 
+                                        border-radius: 8px; 
+                                        text-decoration: none; 
+                                        font-weight: 600;
+                                        font-size: 0.9rem;
+                                        transition: all 0.2s;
+                                        background: white;
+                                   "
+                                   onmouseover="this.style.background='#e7f3ff';"
+                                   onmouseout="this.style.background='white';">
                                     🔑 Login to View
                                 </a>
                                 <a href="register.php?type=employer" 
-                                   class="btn btn-outline"
-                                   style="flex: 1; text-align: center; border: 1px solid #28a745; color: #28a745; padding: 12px; border-radius: 8px; text-decoration: none; font-weight: 500;">
-                                    📝 Register as Employer
+                                   style="
+                                        flex: 1; 
+                                        text-align: center; 
+                                        border: 2px solid #28a745; 
+                                        color: #28a745; 
+                                        padding: 10px; 
+                                        border-radius: 8px; 
+                                        text-decoration: none; 
+                                        font-weight: 600;
+                                        font-size: 0.9rem;
+                                        transition: all 0.2s;
+                                        background: white;
+                                   "
+                                   onmouseover="this.style.background='#e7f7ec';"
+                                   onmouseout="this.style.background='white';">
+                                    📝 Register
                                 </a>
                             </div>
                         <?php endif; ?>
@@ -185,12 +356,53 @@ $candidates = $stmt->fetchAll();
             <?php endforeach; ?>
         </div>
     <?php else: ?>
-        <div class="text-center" style="padding: 4rem 0;">
-            <div style="font-size: 4em; color: #e9ecef; margin-bottom: 1rem;">🔍</div>
-            <h3 style="color: #666; margin-bottom: 1rem;">No candidates found matching your criteria.</h3>
-            <p style="color: #999; margin-bottom: 2rem;">Try adjusting your search terms or filters.</p>
-            <a href="candidates.php" class="btn btn-primary" style="text-decoration: none; padding: 12px 24px; background: #007bff; color: white; border-radius: 8px;">
-                Clear Filters & Show All
+        <!-- No Results State -->
+        <div class="card" style="
+            text-align: center; 
+            padding: 4rem 2rem; 
+            border: 2px dashed #e2e8f0;
+            border-radius: 12px;
+            background: #f8fafc;
+        ">
+            <div style="
+                font-size: 5em; 
+                color: #cbd5e1; 
+                margin-bottom: 1.5rem;
+                line-height: 1;
+            ">
+                👥
+            </div>
+            <h3 style="
+                color: #475569; 
+                margin-bottom: 1rem;
+                font-size: 1.5rem;
+            ">
+                No matching candidates found
+            </h3>
+            <p style="
+                color: #94a3b8; 
+                margin-bottom: 2rem; 
+                max-width: 500px;
+                margin-left: auto;
+                margin-right: auto;
+            ">
+                Try adjusting your search terms or filters to find the right talent for your needs.
+            </p>
+            <a href="candidates.php" 
+               style="
+                    display: inline-block;
+                    text-decoration: none; 
+                    padding: 12px 28px; 
+                    background: #007bff; 
+                    color: white; 
+                    border-radius: 8px;
+                    font-weight: 600;
+                    font-size: 0.95rem;
+                    transition: all 0.2s;
+               "
+               onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,123,255,0.3)';"
+               onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='none';">
+                🔄 Clear Filters & Show All
             </a>
         </div>
     <?php endif; ?>
