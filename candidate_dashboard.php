@@ -1,5 +1,5 @@
 <?php
-// Turn on full error reporting for debugging
+// Turn on error reporting (remove or comment out in production)
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -7,15 +7,6 @@ error_reporting(E_ALL);
 // candidate_dashboard.php
 require_once 'includes/header.php';
 require_login();
-
-// Debug: Check if $conn exists and what type it is
-if (!isset($conn)) {
-    die("Error: Database connection not established. Check includes/header.php");
-}
-
-// Debug: Check the type of $conn
-echo "Debug: \$conn type: " . get_class($conn) . "<br>";
-echo "Debug: \$conn value: "; var_dump($conn); echo "<br>";
 
 // Ensure user is a candidate
 if (get_role() !== 'candidate') {
@@ -25,19 +16,24 @@ if (get_role() !== 'candidate') {
 $user_id = $_SESSION['user_id'];
 
 // Fetch Candidate Info
+$user = null;
 try {
     $stmt = $conn->prepare("SELECT * FROM candidates WHERE id = ?");
     $stmt->execute([$user_id]);
     $user = $stmt->fetch();
     
     if (!$user) {
-        die("Error: Candidate not found with ID: $user_id");
+        // Handle missing user gracefully
+        session_destroy();
+        redirect('login.php');
     }
 } catch (PDOException $e) {
-    die("Database error: " . $e->getMessage());
+    error_log("Candidate fetch error: " . $e->getMessage());
+    $user = ['full_name' => 'User', 'title' => 'Job Seeker']; // Fallback
 }
 
 // Fetch Recent Applications
+$applications = [];
 try {
     $stmt = $conn->prepare("
         SELECT a.*, j.title as job_title, e.company_name 
@@ -51,215 +47,37 @@ try {
     $stmt->execute([$user_id]);
     $applications = $stmt->fetchAll();
 } catch (PDOException $e) {
-    die("Applications query error: " . $e->getMessage());
+    error_log("Applications error: " . $e->getMessage());
 }
 
-// Fetch Documents stats - FIXED VERSION
+// Fetch Documents stats
+$doc_count = 0;
 try {
-    // First, let's check if the documents table exists and has the right structure
-    $check_table = $conn->query("SHOW TABLES LIKE 'documents'");
-    if ($check_table->rowCount() == 0) {
-        die("Error: 'documents' table doesn't exist!");
-    }
-    
-    // Check columns in documents table
-    $check_columns = $conn->query("DESCRIBE documents");
-    $columns = $check_columns->fetchAll(PDO::FETCH_COLUMN);
-    echo "Debug: Columns in documents table: " . implode(", ", $columns) . "<br>";
-    
-    // Now try the count query
     $stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate'");
     $stmt->execute([$user_id]);
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($result) {
-        $doc_count = $result['count'];
-    } else {
-        $doc_count = 0;
-    }
-    
-    echo "Debug: Document count for user $user_id: $doc_count<br>";
-    
+    $result = $stmt->fetch();
+    $doc_count = $result['count'] ?? 0;
 } catch (PDOException $e) {
-    die("Documents query error: " . $e->getMessage() . "<br>Query attempted: SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate'");
-}
-?>
-
-<!-- Rest of your HTML code remains the same --><?php
-// Turn on full error reporting for debugging
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-// candidate_dashboard.php
-require_once 'includes/header.php';
-require_login();
-
-// Debug: Check if $conn exists and what type it is
-if (!isset($conn)) {
-    die("Error: Database connection not established. Check includes/header.php");
+    error_log("Documents count error: " . $e->getMessage());
 }
 
-// Debug: Check the type of $conn
-echo "Debug: \$conn type: " . get_class($conn) . "<br>";
-echo "Debug: \$conn value: "; var_dump($conn); echo "<br>";
-
-// Ensure user is a candidate
-if (get_role() !== 'candidate') {
-    redirect('employer_dashboard.php');
-}
-
-$user_id = $_SESSION['user_id'];
-
-// Fetch Candidate Info
-try {
-    $stmt = $conn->prepare("SELECT * FROM candidates WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $user = $stmt->fetch();
-    
-    if (!$user) {
-        die("Error: Candidate not found with ID: $user_id");
-    }
-} catch (PDOException $e) {
-    die("Database error: " . $e->getMessage());
-}
-
-// Fetch Recent Applications
+// Fetch Pending Invitations
+$invitations = [];
 try {
     $stmt = $conn->prepare("
-        SELECT a.*, j.title as job_title, e.company_name 
-        FROM applications a 
-        JOIN jobs j ON a.job_id = j.id 
-        JOIN employers e ON j.employer_id = e.id 
-        WHERE a.candidate_id = ? 
-        ORDER BY a.applied_at DESC 
-        LIMIT 5
+        SELECT i.*, j.title as job_title, e.company_name 
+        FROM invitations i 
+        JOIN jobs j ON i.job_id = j.id 
+        JOIN employers e ON i.employer_id = e.id 
+        WHERE i.candidate_id = ? AND i.status = 'pending'
+        ORDER BY i.created_at DESC
     ");
     $stmt->execute([$user_id]);
-    $applications = $stmt->fetchAll();
+    $invitations = $stmt->fetchAll();
 } catch (PDOException $e) {
-    die("Applications query error: " . $e->getMessage());
-}
-
-// Fetch Documents stats - FIXED VERSION
-try {
-    // First, let's check if the documents table exists and has the right structure
-    $check_table = $conn->query("SHOW TABLES LIKE 'documents'");
-    if ($check_table->rowCount() == 0) {
-        die("Error: 'documents' table doesn't exist!");
-    }
-    
-    // Check columns in documents table
-    $check_columns = $conn->query("DESCRIBE documents");
-    $columns = $check_columns->fetchAll(PDO::FETCH_COLUMN);
-    echo "Debug: Columns in documents table: " . implode(", ", $columns) . "<br>";
-    
-    // Now try the count query
-    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate'");
-    $stmt->execute([$user_id]);
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($result) {
-        $doc_count = $result['count'];
-    } else {
-        $doc_count = 0;
-    }
-    
-    echo "Debug: Document count for user $user_id: $doc_count<br>";
-    
-} catch (PDOException $e) {
-    die("Documents query error: " . $e->getMessage() . "<br>Query attempted: SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate'");
+    error_log("Invitations error: " . $e->getMessage());
 }
 ?>
-
-<!-- Rest of your HTML code remains the same --><?php
-// Turn on full error reporting for debugging
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-// candidate_dashboard.php
-require_once 'includes/header.php';
-require_login();
-
-// Debug: Check if $conn exists and what type it is
-if (!isset($conn)) {
-    die("Error: Database connection not established. Check includes/header.php");
-}
-
-// Debug: Check the type of $conn
-echo "Debug: \$conn type: " . get_class($conn) . "<br>";
-echo "Debug: \$conn value: "; var_dump($conn); echo "<br>";
-
-// Ensure user is a candidate
-if (get_role() !== 'candidate') {
-    redirect('employer_dashboard.php');
-}
-
-$user_id = $_SESSION['user_id'];
-
-// Fetch Candidate Info
-try {
-    $stmt = $conn->prepare("SELECT * FROM candidates WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $user = $stmt->fetch();
-    
-    if (!$user) {
-        die("Error: Candidate not found with ID: $user_id");
-    }
-} catch (PDOException $e) {
-    die("Database error: " . $e->getMessage());
-}
-
-// Fetch Recent Applications
-try {
-    $stmt = $conn->prepare("
-        SELECT a.*, j.title as job_title, e.company_name 
-        FROM applications a 
-        JOIN jobs j ON a.job_id = j.id 
-        JOIN employers e ON j.employer_id = e.id 
-        WHERE a.candidate_id = ? 
-        ORDER BY a.applied_at DESC 
-        LIMIT 5
-    ");
-    $stmt->execute([$user_id]);
-    $applications = $stmt->fetchAll();
-} catch (PDOException $e) {
-    die("Applications query error: " . $e->getMessage());
-}
-
-// Fetch Documents stats - FIXED VERSION
-try {
-    // First, let's check if the documents table exists and has the right structure
-    $check_table = $conn->query("SHOW TABLES LIKE 'documents'");
-    if ($check_table->rowCount() == 0) {
-        die("Error: 'documents' table doesn't exist!");
-    }
-    
-    // Check columns in documents table
-    $check_columns = $conn->query("DESCRIBE documents");
-    $columns = $check_columns->fetchAll(PDO::FETCH_COLUMN);
-    echo "Debug: Columns in documents table: " . implode(", ", $columns) . "<br>";
-    
-    // Now try the count query
-    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate'");
-    $stmt->execute([$user_id]);
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($result) {
-        $doc_count = $result['count'];
-    } else {
-        $doc_count = 0;
-    }
-    
-    echo "Debug: Document count for user $user_id: $doc_count<br>";
-    
-} catch (PDOException $e) {
-    die("Documents query error: " . $e->getMessage() . "<br>Query attempted: SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate'");
-}
-?>
-
-<!-- Rest of your HTML code remains the same -->
 
 <div class="container mt-4">
     <div class="row" style="display: grid; grid-template-columns: 250px 1fr; gap: 2rem;">
@@ -272,9 +90,9 @@ try {
                     ?>
                     <img src="<?php echo $photo_url; ?>" alt="Profile"
                         style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem; border: 3px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo sanitize($user['full_name']); ?></h4>
+                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo sanitize($user['full_name'] ?? 'User'); ?></h4>
                     <p style="color: #666; font-size: 0.9em;">
-                        <?php echo sanitize($user['title'] ?: 'Job Seeker'); ?>
+                        <?php echo sanitize($user['title'] ?? 'Job Seeker'); ?>
                     </p>
                     <div style="font-size: 0.8em; color: #666; margin-top: 0.5rem;">
                         <span style="background: #e7f3ff; padding: 2px 8px; border-radius: 12px;">
@@ -339,20 +157,6 @@ try {
                     </a>
                 </div>
 
-                <?php
-                // Fetch Pending Invitations
-                $stmt = $conn->prepare("
-                    SELECT i.*, j.title as job_title, e.company_name 
-                    FROM invitations i 
-                    JOIN jobs j ON i.job_id = j.id 
-                    JOIN employers e ON i.employer_id = e.id 
-                    WHERE i.candidate_id = ? AND i.status = 'pending'
-                    ORDER BY i.created_at DESC
-                ");
-                $stmt->execute([$user_id]);
-                $invitations = $stmt->fetchAll();
-                ?>
-
                 <!-- Stats -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
                     <div class="card" style="border-left: 4px solid #007bff; padding: 1rem;">
@@ -360,7 +164,7 @@ try {
                         <p style="font-size: 2rem; font-weight: 700; color: #007bff; margin: 0;">
                             <?php echo count($applications); ?>
                         </p>
-                        <a href="candidate_documents.php?filter=applications" style="font-size: 0.85em; color: #666; text-decoration: none;">
+                        <a href="candidate_applications.php" style="font-size: 0.85em; color: #666; text-decoration: none;">
                             View all →
                         </a>
                     </div>
@@ -387,7 +191,17 @@ try {
                     <div class="card" style="border-left: 4px solid #6f42c1; padding: 1rem;">
                         <h5 style="color: #666; font-size: 0.9rem; margin-bottom: 0.5rem;">Profile</h5>
                         <p style="font-size: 2rem; font-weight: 700; color: #6f42c1; margin: 0;">
-                            <?php echo (!empty($user['profile_picture']) && $user['visibility'] === 'visible') ? '👁️' : '👤'; ?>
+                            <?php 
+                            // Check if profile picture exists
+                            try {
+                                $stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic'");
+                                $stmt->execute([$user_id]);
+                                $profile_pic_count = $stmt->fetch()['count'] ?? 0;
+                                echo ($profile_pic_count > 0 && ($user['visibility'] ?? 'visible') === 'visible') ? '👁️' : '👤';
+                            } catch (Exception $e) {
+                                echo '👤';
+                            }
+                            ?>
                         </p>
                         <a href="candidate_profile.php" style="font-size: 0.85em; color: #666; text-decoration: none;">
                             Edit profile →
@@ -461,7 +275,7 @@ try {
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0;">
                         <h3 style="margin: 0;">📋 Recent Applications</h3>
                         <?php if (count($applications) > 0): ?>
-                        <a href="candidate_documents.php?filter=applications" style="font-size: 0.9em; color: #007bff; text-decoration: none;">
+                        <a href="candidate_applications.php" style="font-size: 0.9em; color: #007bff; text-decoration: none;">
                             View all applications →
                         </a>
                         <?php endif; ?>
