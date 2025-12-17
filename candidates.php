@@ -31,30 +31,6 @@ $sql .= " ORDER BY created_at DESC";
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $candidates = $stmt->fetchAll();
-
-// Helper function to get profile picture for candidate listing
-function get_candidate_photo_url($candidate, $conn) {
-    if (!empty($candidate['profile_picture'])) {
-        try {
-            // Check if it's stored in documents table
-            $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
-                                    WHERE candidate_id = ? AND file_path = ? AND type = 'profile_pic' 
-                                    ORDER BY uploaded_at DESC LIMIT 1");
-            $stmt->execute([$candidate['id'], $candidate['profile_picture']]);
-            $result = $stmt->fetch();
-            
-            if ($result && !empty($result['file_content'])) {
-                return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
-            }
-        } catch (PDOException $e) {
-            // Fall through to default
-        }
-    }
-    
-    // Default avatar
-    $name = urlencode($candidate['full_name'] ?? 'Candidate');
-    return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
-}
 ?>
 
 <div class="header-banner"
@@ -110,11 +86,12 @@ function get_candidate_photo_url($candidate, $conn) {
                     <!-- Candidate Header -->
                     <div style="padding: 1.5rem; display: flex; gap: 1rem; align-items: flex-start; border-bottom: 1px solid #f1f5f9; background: linear-gradient(to right, #f8fafc, #ffffff);">
                         <?php
-                        // FIXED: Use the helper function to get profile picture
-                        $photo_url = get_candidate_photo_url($c, $conn);
+                        // FIXED: Use get_profile_picture_url() function from includes/functions.php
+                        $photo_url = get_profile_picture_url($c['id'], $conn);
                         ?>
                         <img src="<?php echo $photo_url; ?>" alt="Profile"
-                            style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"
+                            onerror="this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($c['full_name'] ?? 'Candidate'); ?>&background=0ea5e9&color=fff&size=128'">
                         <div style="flex: 1;">
                             <h4 style="margin: 0 0 5px 0; font-size: 1.2rem; color: #333;"><?php echo htmlspecialchars($c['full_name']); ?></h4>
                             <p style="color: #007bff; font-weight: 500; margin: 0 0 8px 0;">
