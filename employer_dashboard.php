@@ -1,6 +1,11 @@
 <?php
 // employer_dashboard.php
+session_start();
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 require_once 'includes/header.php';
+require_once 'includes/functions.php';
 require_login();
 
 // Ensure user is an employer
@@ -14,6 +19,11 @@ $employer_id = $_SESSION['user_id'];
 $stmt = $conn->prepare("SELECT * FROM employers WHERE id = ?");
 $stmt->execute([$employer_id]);
 $user = $stmt->fetch();
+
+if (!$user) {
+    session_destroy();
+    redirect('login.php');
+}
 
 // Get Stats
 // 1. Active Jobs
@@ -48,6 +58,19 @@ $recent_apps = $stmt->fetchAll();
 $stmt = $conn->prepare("SELECT * FROM jobs WHERE employer_id = ? ORDER BY created_at DESC LIMIT 3");
 $stmt->execute([$employer_id]);
 $recent_jobs = $stmt->fetchAll();
+
+// Fetch Sent Invitations
+$stmt = $conn->prepare("
+    SELECT i.*, j.title as job_title, c.full_name as candidate_name 
+    FROM invitations i 
+    JOIN jobs j ON i.job_id = j.id 
+    JOIN candidates c ON i.candidate_id = c.id 
+    WHERE i.employer_id = ? 
+    ORDER BY i.created_at DESC 
+    LIMIT 5
+");
+$stmt->execute([$employer_id]);
+$invitations = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -99,6 +122,7 @@ $recent_jobs = $stmt->fetchAll();
             font-weight: 500;
             cursor: pointer;
             border: none;
+            transition: all 0.2s;
         }
         
         .btn-primary {
@@ -106,10 +130,21 @@ $recent_jobs = $stmt->fetchAll();
             color: white;
         }
         
+        .btn-primary:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
         .btn-outline {
             background-color: transparent;
             border: 1px solid #007bff;
             color: #007bff;
+        }
+        
+        .btn-outline:hover {
+            background-color: #007bff;
+            color: white;
         }
         
         aside {
@@ -136,6 +171,36 @@ $recent_jobs = $stmt->fetchAll();
             background: #0056b3;
             transform: translateY(-1px);
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            color: white;
+            text-decoration: none;
+        }
+        
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: inline-block;
+        }
+        
+        .status-pending {
+            background: #e0f2fe;
+            color: #075985;
+        }
+        
+        .status-reviewed {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .status-accepted {
+            background: #dcfce7;
+            color: #166534;
+        }
+        
+        .status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
         }
         
         @media (max-width: 768px) {
@@ -161,53 +226,51 @@ $recent_jobs = $stmt->fetchAll();
             <div class="card">
                 <div class="text-center mb-2">
                     <?php
-                    // Get company logo using the function from employer_profile.php
-                    if (!function_exists('get_company_logo_url')) {
-                        function get_company_logo_url($user_id, $conn) {
-                            try {
-                                $stmt = $conn->prepare("SELECT logo FROM employers WHERE id = ?");
-                                $stmt->execute([$user_id]);
-                                $employer = $stmt->fetch();
-                                
-                                if (!empty($employer['logo'])) {
-                                    // Check documents table first
-                                    try {
-                                        $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
-                                                                WHERE user_id = ? AND user_type = 'employer' AND file_path = ? AND type = 'company_logo' 
-                                                                ORDER BY uploaded_at DESC LIMIT 1");
-                                        $stmt->execute([$user_id, $employer['logo']]);
-                                        $result = $stmt->fetch();
-                                        
-                                        if ($result && !empty($result['file_content'])) {
-                                            return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
-                                        }
-                                    } catch (Exception $e) {
-                                        // Continue to filesystem check
-                                    }
-                                    
-                                    // Try filesystem
-                                    $possible_paths = [
-                                        'uploads/logos/' . $employer['logo'],
-                                        'uploads/' . $employer['logo'],
-                                        $employer['logo']
-                                    ];
-                                    
-                                    foreach ($possible_paths as $path) {
-                                        if (file_exists($path)) {
-                                            return $path;
-                                        }
-                                    }
-                                }
-                            } catch (PDOException $e) {
-                                // Fall through
-                            }
-                            
-                            $stmt = $conn->prepare("SELECT company_name FROM employers WHERE id = ?");
+                    // Get company logo
+                    function get_company_logo_url($user_id, $conn) {
+                        try {
+                            $stmt = $conn->prepare("SELECT logo FROM employers WHERE id = ?");
                             $stmt->execute([$user_id]);
                             $employer = $stmt->fetch();
-                            $name = urlencode($employer['company_name'] ?? 'Company');
-                            return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
+                            
+                            if (!empty($employer['logo'])) {
+                                // Check documents table first
+                                try {
+                                    $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
+                                                            WHERE user_id = ? AND user_type = 'employer' AND file_path = ? AND type = 'company_logo' 
+                                                            ORDER BY uploaded_at DESC LIMIT 1");
+                                    $stmt->execute([$user_id, $employer['logo']]);
+                                    $result = $stmt->fetch();
+                                    
+                                    if ($result && !empty($result['file_content'])) {
+                                        return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
+                                    }
+                                } catch (Exception $e) {
+                                    // Continue to filesystem check
+                                }
+                                
+                                // Try filesystem
+                                $possible_paths = [
+                                    'uploads/logos/' . $employer['logo'],
+                                    'uploads/' . $employer['logo'],
+                                    $employer['logo']
+                                ];
+                                
+                                foreach ($possible_paths as $path) {
+                                    if (file_exists($path)) {
+                                        return $path;
+                                    }
+                                }
+                            }
+                        } catch (PDOException $e) {
+                            // Fall through
                         }
+                        
+                        $stmt = $conn->prepare("SELECT company_name FROM employers WHERE id = ?");
+                        $stmt->execute([$user_id]);
+                        $employer = $stmt->fetch();
+                        $name = urlencode($employer['company_name'] ?? 'Company');
+                        return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
                     }
                     
                     $logo_url = get_company_logo_url($employer_id, $conn);
@@ -283,21 +346,6 @@ $recent_jobs = $stmt->fetchAll();
                 </div>
             </div>
 
-            <?php
-            // Fetch Sent Invitations
-            $stmt = $conn->prepare("
-                SELECT i.*, j.title as job_title, c.full_name as candidate_name 
-                FROM invitations i 
-                JOIN jobs j ON i.job_id = j.id 
-                JOIN candidates c ON i.candidate_id = c.id 
-                WHERE i.employer_id = ? 
-                ORDER BY i.created_at DESC 
-                LIMIT 5
-            ");
-            $stmt->execute([$employer_id]);
-            $invitations = $stmt->fetchAll();
-            ?>
-
             <!-- Sent Invitations -->
             <?php if (count($invitations) > 0): ?>
                 <div class="card mb-2">
@@ -322,13 +370,10 @@ $recent_jobs = $stmt->fetchAll();
                                         <?php echo date('M d', strtotime($inv['created_at'])); ?>
                                     </td>
                                     <td style="padding: 0.75rem;">
-                                        <span style="
-                                            padding: 0.25rem 0.75rem; 
-                                            border-radius: 999px; 
-                                            font-size: 0.85rem; 
-                                            background: <?php echo $inv['status'] == 'accepted' ? '#dcfce7' : ($inv['status'] == 'declined' ? '#fee2e2' : '#e0f2fe'); ?>;
-                                            color: <?php echo $inv['status'] == 'accepted' ? '#166534' : ($inv['status'] == 'declined' ? '#991b1b' : '#075985'); ?>;
-                                        ">
+                                        <?php
+                                        $status_class = 'status-' . $inv['status'];
+                                        ?>
+                                        <span class="status-badge <?php echo $status_class; ?>">
                                             <?php echo ucfirst($inv['status']); ?>
                                         </span>
                                     </td>
@@ -371,25 +416,11 @@ $recent_jobs = $stmt->fetchAll();
                                     </td>
                                     <td style="padding: 0.75rem;">
                                         <?php
-                                        $status_colors = [
-                                            'pending' => ['bg' => '#e0f2fe', 'text' => '#075985', 'label' => 'Pending'],
-                                            'reviewed' => ['bg' => '#fef3c7', 'text' => '#92400e', 'label' => 'Reviewed'],
-                                            'accepted' => ['bg' => '#dcfce7', 'text' => '#166534', 'label' => 'Accepted'],
-                                            'rejected' => ['bg' => '#fee2e2', 'text' => '#991b1b', 'label' => 'Rejected']
-                                        ];
                                         $status = $app['status'];
-                                        $color = $status_colors[$status] ?? $status_colors['pending'];
+                                        $status_class = 'status-' . $status;
                                         ?>
-                                        <span style="
-                                            padding: 4px 10px; 
-                                            border-radius: 20px; 
-                                            font-size: 0.85rem; 
-                                            font-weight: 500;
-                                            background: <?php echo $color['bg']; ?>;
-                                            color: <?php echo $color['text']; ?>;
-                                            display: inline-block;
-                                        ">
-                                            <?php echo $color['label']; ?>
+                                        <span class="status-badge <?php echo $status_class; ?>">
+                                            <?php echo ucfirst($status); ?>
                                         </span>
                                     </td>
                                     <td style="padding: 0.75rem;">
