@@ -1,4 +1,11 @@
 <?php
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// Debug: Log the request
+error_log("DEBUG: Accessing employer_applications.php with id=" . ($_GET['id'] ?? 'none'));
+
 // employer_dashboard.php - DEBUG VERSION
 require_once 'includes/header.php';
 require_login();
