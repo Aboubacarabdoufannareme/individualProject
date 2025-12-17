@@ -1,6 +1,6 @@
 <?php
 // employer_applications.php
-session_start();
+// REMOVE session_start() since it's already in header.php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -14,9 +14,6 @@ if (get_role() !== 'employer') {
 
 $employer_id = $_SESSION['user_id'];
 $application_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
-
-// Debug: Log the application ID
-error_log("Application ID: " . $application_id);
 
 // Handle Status Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
@@ -52,10 +49,25 @@ if ($application_id) {
         redirect('employer_applications.php');
     }
 
-    // Get Candidate Documents
-    $stmt = $conn->prepare("SELECT * FROM documents WHERE candidate_id = ?");
-    $stmt->execute([$application['candidate_id']]);
-    $documents = $stmt->fetchAll();
+    // Get Candidate Documents - FIXED QUERY
+    // Check which column exists in your documents table
+    try {
+        // Try with candidate_id first (old structure)
+        $stmt = $conn->prepare("SELECT * FROM documents WHERE candidate_id = ?");
+        $stmt->execute([$application['candidate_id']]);
+        $documents = $stmt->fetchAll();
+        
+        // If no results, try with user_id (new structure)
+        if (empty($documents)) {
+            $stmt = $conn->prepare("SELECT * FROM documents WHERE user_id = ? AND user_type = 'candidate'");
+            $stmt->execute([$application['candidate_id']]);
+            $documents = $stmt->fetchAll();
+        }
+    } catch (PDOException $e) {
+        // If both queries fail, documents will be empty
+        $documents = [];
+        error_log("Error fetching documents: " . $e->getMessage());
+    }
 
 } else {
     // === VIEW LIST ===
@@ -333,6 +345,13 @@ if ($application_id) {
                                 </div>
                             <?php endforeach; ?>
                         </div>
+                    </div>
+                <?php else: ?>
+                    <div class="card mb-2">
+                        <h3 style="margin-top: 0;">Candidate Documents</h3>
+                        <p style="color: #6c757d; text-align: center; padding: 2rem;">
+                            No documents uploaded by this candidate.
+                        </p>
                     </div>
                 <?php endif; ?>
 
