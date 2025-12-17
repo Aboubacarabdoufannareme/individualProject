@@ -1,31 +1,65 @@
 <?php
 // job_details.php
 require_once 'includes/header.php';
+require_once 'includes/functions.php'; // Make sure functions are included
 
 $job_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 
-try {
-    // Check if column exists
-    $conn->query("SELECT logo FROM employers LIMIT 1");
-    $stmt = $conn->prepare("
-        SELECT j.*, e.company_name, e.description as company_bio, e.website, e.logo 
-        FROM jobs j 
-        JOIN employers e ON j.employer_id = e.id 
-        WHERE j.id = ?
-    ");
-} catch (PDOException $e) {
-    $stmt = $conn->prepare("
-        SELECT j.*, e.company_name, e.description as company_bio, e.website 
-        FROM jobs j 
-        JOIN employers e ON j.employer_id = e.id 
-        WHERE j.id = ?
-    ");
-}
+// Get job details with company info
+$stmt = $conn->prepare("
+    SELECT j.*, e.company_name, e.description as company_bio, e.website, e.logo 
+    FROM jobs j 
+    JOIN employers e ON j.employer_id = e.id 
+    WHERE j.id = ?
+");
 $stmt->execute([$job_id]);
 $job = $stmt->fetch();
 
 if (!$job) {
     redirect('jobs.php');
+}
+
+// Get company logo from documents table if available
+$company_logo_url = "https://ui-avatars.com/api/?name=" . urlencode($job['company_name']) . "&background=0f172a&color=fff&size=128";
+
+if (isset($job['logo']) && $job['logo']) {
+    try {
+        // Try to get logo from documents table (BLOB storage)
+        $stmt = $conn->prepare("
+            SELECT file_content, mime_type 
+            FROM documents 
+            WHERE user_id = ? 
+            AND user_type = 'employer' 
+            AND type = 'company_logo' 
+            AND (file_path = ? OR original_name = ?)
+            ORDER BY uploaded_at DESC 
+            LIMIT 1
+        ");
+        $stmt->execute([$job['employer_id'], $job['logo'], $job['logo']]);
+        $logo_result = $stmt->fetch();
+        
+        if ($logo_result && !empty($logo_result['file_content'])) {
+            // Return as data URL
+            $company_logo_url = 'data:' . $logo_result['mime_type'] . ';base64,' . base64_encode($logo_result['file_content']);
+        } else {
+            // Try filesystem as fallback
+            $possible_paths = [
+                'uploads/logos/' . $job['logo'],
+                'uploads/' . $job['logo'],
+                $job['logo']
+            ];
+            
+            foreach ($possible_paths as $path) {
+                if (file_exists($path)) {
+                    $company_logo_url = $path;
+                    break;
+                }
+            }
+        }
+    } catch (PDOException $e) {
+        // Keep default avatar on error
+        error_log("Logo fetch error: " . $e->getMessage());
+    }
 }
 
 // Handle Application
@@ -122,19 +156,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['apply'])) {
         <aside>
             <div class="card">
                 <div class="text-center mb-1">
-                    <?php 
-                    $logo_url = "https://ui-avatars.com/api/?name=" . urlencode($job['company_name']) . "&background=0f172a&color=fff";
-                    if (isset($job['logo']) && $job['logo']) {
-                        $logo_url = 'uploads/logos/' . $job['logo'];
-                    }
-                    ?>
-                    <img src="<?php echo $logo_url; ?>" alt="Company Logo" style="width: 80px; height: 80px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid #e2e8f0; margin-bottom: 0.5rem;">
+                    <img src="<?php echo $company_logo_url; ?>" 
+                         alt="<?php echo sanitize($job['company_name']); ?> Logo" 
+                         style="width: 120px; height: 120px; object-fit: contain; border-radius: 8px; border: 2px solid #e2e8f0; margin-bottom: 1rem; background: white;">
                 </div>
-                <h3>About the Company</h3>
-                <p><?php echo sanitize($job['company_bio']); ?></p>
+                <h3 style="margin-top: 0;">About the Company</h3>
+                <p><?php echo nl2br(sanitize($job['company_bio'])); ?></p>
                 <?php if ($job['website']): ?>
                     <a href="<?php echo sanitize($job['website']); ?>" target="_blank"
-                        class="btn btn-outline btn-block mt-1">Visit Website</a>
+                        class="btn btn-outline btn-block mt-1" style="display: block; text-align: center;">
+                        🌐 Visit Website
+                    </a>
                 <?php endif; ?>
             </div>
         </aside>
