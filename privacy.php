@@ -35,8 +35,8 @@ require_once 'includes/header.php';
             <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
                 <div>
                     <p style="margin: 0 0 0.5rem 0; color: var(--text-muted);">
-                        <strong>Last Updated:</strong> December 17, 2024<br>
-                        <strong>Effective Date:</strong> December 17, 2024<br>
+                        <strong>Last Updated:</strong> December 2, 2025<br>
+                        <strong>Effective Date:</strong> December 2, 2025<br>
                         <strong>Version:</strong> 2.0
                     </p>
                 </div>
