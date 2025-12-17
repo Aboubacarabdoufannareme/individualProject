@@ -118,6 +118,26 @@ $recent_jobs = $stmt->fetchAll();
             height: fit-content;
         }
         
+        .review-btn {
+            display: inline-block;
+            padding: 6px 12px;
+            background: #007bff;
+            color: white;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .review-btn:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
         @media (max-width: 768px) {
             .row {
                 grid-template-columns: 1fr;
@@ -323,7 +343,9 @@ $recent_jobs = $stmt->fetchAll();
             <div class="card mb-2">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                     <h3 style="margin: 0; font-size: 1.3rem; color: #333;">Recent Applications</h3>
+                    <?php if (count($recent_apps) > 0): ?>
                     <a href="employer_applications.php" style="font-size: 0.9rem; color: #6c757d; text-decoration: none;">View All</a>
+                    <?php endif; ?>
                 </div>
 
                 <?php if (count($recent_apps) > 0): ?>
@@ -333,6 +355,7 @@ $recent_jobs = $stmt->fetchAll();
                                 <th style="padding: 0.75rem;">Candidate</th>
                                 <th style="padding: 0.75rem;">Job</th>
                                 <th style="padding: 0.75rem;">Date</th>
+                                <th style="padding: 0.75rem;">Status</th>
                                 <th style="padding: 0.75rem;">Action</th>
                             </tr>
                         </thead>
@@ -344,18 +367,50 @@ $recent_jobs = $stmt->fetchAll();
                                     </td>
                                     <td style="padding: 0.75rem;"><?php echo htmlspecialchars($app['job_title']); ?></td>
                                     <td style="padding: 0.75rem; color: #666;">
-                                        <?php echo date('M d', strtotime($app['applied_at'])); ?>
+                                        <?php echo date('M d, Y', strtotime($app['applied_at'])); ?>
                                     </td>
                                     <td style="padding: 0.75rem;">
-                                        <a href="employer_applications.php?id=<?php echo $app['id']; ?>" class="btn btn-outline"
-                                            style="padding: 0.25rem 0.5rem; font-size: 0.8rem; text-decoration: none;">Review</a>
+                                        <?php
+                                        $status_colors = [
+                                            'pending' => ['bg' => '#e0f2fe', 'text' => '#075985', 'label' => 'Pending'],
+                                            'reviewed' => ['bg' => '#fef3c7', 'text' => '#92400e', 'label' => 'Reviewed'],
+                                            'accepted' => ['bg' => '#dcfce7', 'text' => '#166534', 'label' => 'Accepted'],
+                                            'rejected' => ['bg' => '#fee2e2', 'text' => '#991b1b', 'label' => 'Rejected']
+                                        ];
+                                        $status = $app['status'];
+                                        $color = $status_colors[$status] ?? $status_colors['pending'];
+                                        ?>
+                                        <span style="
+                                            padding: 4px 10px; 
+                                            border-radius: 20px; 
+                                            font-size: 0.85rem; 
+                                            font-weight: 500;
+                                            background: <?php echo $color['bg']; ?>;
+                                            color: <?php echo $color['text']; ?>;
+                                            display: inline-block;
+                                        ">
+                                            <?php echo $color['label']; ?>
+                                        </span>
+                                    </td>
+                                    <td style="padding: 0.75rem;">
+                                        <a href="employer_applications.php?id=<?php echo $app['id']; ?>" 
+                                           class="review-btn">
+                                           Review
+                                        </a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
                 <?php else: ?>
-                    <p style="color: #666;">No applications received yet.</p>
+                    <div style="text-align: center; padding: 2rem; color: #666;">
+                        <div style="font-size: 3em; color: #dee2e6; margin-bottom: 1rem;">📝</div>
+                        <h4 style="margin-bottom: 0.5rem; color: #6c757d;">No Applications Yet</h4>
+                        <p style="color: #6c757d;">Applications will appear here when candidates apply to your jobs.</p>
+                        <a href="employer_post_job.php" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">
+                            Post Your First Job
+                        </a>
+                    </div>
                 <?php endif; ?>
             </div>
 
@@ -363,22 +418,69 @@ $recent_jobs = $stmt->fetchAll();
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                     <h3 style="margin: 0; font-size: 1.3rem; color: #333;">Your Recent Jobs</h3>
+                    <a href="employer_jobs.php" style="font-size: 0.9rem; color: #6c757d; text-decoration: none;">View All</a>
                 </div>
                 <?php if (count($recent_jobs) > 0): ?>
-                    <?php foreach ($recent_jobs as $job): ?>
-                        <div
-                            style="padding: 1rem; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <div style="font-weight: 600;"><?php echo htmlspecialchars($job['title']); ?></div>
-                                <div style="font-size: 0.85rem; color: #666;">
-                                    <?php echo ucfirst($job['status']); ?> • Posted
-                                    <?php echo date('M d', strtotime($job['created_at'])); ?>
+                    <div style="display: grid; gap: 1rem;">
+                        <?php foreach ($recent_jobs as $job): ?>
+                            <div
+                                style="padding: 1.25rem; 
+                                       border: 1px solid #e2e8f0; 
+                                       border-radius: 8px; 
+                                       background: #f8fafc;
+                                       display: flex; 
+                                       justify-content: space-between; 
+                                       align-items: center;
+                                       transition: all 0.2s;"
+                                onmouseover="this.style.borderColor='#007bff'; this.style.boxShadow='0 2px 8px rgba(0,123,255,0.1)';"
+                                onmouseout="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none';">
+                                <div>
+                                    <div style="font-weight: 600; color: #333; font-size: 1.1rem;"><?php echo htmlspecialchars($job['title']); ?></div>
+                                    <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">
+                                        <span style="background: <?php echo $job['status'] == 'active' ? '#d4edda' : '#f8d7da'; ?>; 
+                                              padding: 3px 10px; 
+                                              border-radius: 12px; 
+                                              font-size: 0.8em;
+                                              color: <?php echo $job['status'] == 'active' ? '#155724' : '#721c24'; ?>;">
+                                            <?php echo ucfirst($job['status']); ?>
+                                        </span>
+                                        • 
+                                        <?php echo date('M d, Y', strtotime($job['created_at'])); ?>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <a href="job_details.php?id=<?php echo $job['id']; ?>" 
+                                       style="padding: 6px 12px; 
+                                              background: #007bff; 
+                                              color: white; 
+                                              border-radius: 4px; 
+                                              text-decoration: none; 
+                                              font-size: 0.85rem;
+                                              font-weight: 500;">
+                                       View
+                                    </a>
+                                    <a href="employer_edit_job.php?id=<?php echo $job['id']; ?>" 
+                                       style="padding: 6px 12px; 
+                                              background: white; 
+                                              color: #6c757d; 
+                                              border: 1px solid #dee2e6; 
+                                              border-radius: 4px; 
+                                              text-decoration: none; 
+                                              font-size: 0.85rem;">
+                                       Edit
+                                    </a>
                                 </div>
                             </div>
-                        </div>
-                    <?php endforeach; ?>
+                        <?php endforeach; ?>
+                    </div>
                 <?php else: ?>
-                    <p style="color: #666;">You haven't posted any jobs yet.</p>
+                    <div style="text-align: center; padding: 1.5rem; color: #666;">
+                        <div style="font-size: 2em; color: #dee2e6; margin-bottom: 0.5rem;">📋</div>
+                        <p style="margin: 0;">You haven't posted any jobs yet.</p>
+                        <a href="employer_post_job.php" style="display: inline-block; margin-top: 1rem; color: #007bff; font-weight: 500;">
+                            Post your first job →
+                        </a>
+                    </div>
                 <?php endif; ?>
             </div>
         </main>
