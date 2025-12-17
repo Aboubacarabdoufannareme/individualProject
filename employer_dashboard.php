@@ -1,8 +1,5 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-// employer_dashboard.php
+// employer_dashboard.php - DEBUG VERSION
 require_once 'includes/header.php';
 require_login();
 
@@ -34,7 +31,7 @@ $stmt = $conn->prepare("
 $stmt->execute([$employer_id]);
 $total_applications = $stmt->fetchColumn();
 
-// Get Recent Applications
+// Get Recent Applications - DEBUG THIS QUERY
 $stmt = $conn->prepare("
     SELECT a.*, j.title as job_title, c.full_name as candidate_name, c.id as candidate_id 
     FROM applications a 
@@ -46,6 +43,12 @@ $stmt = $conn->prepare("
 ");
 $stmt->execute([$employer_id]);
 $recent_apps = $stmt->fetchAll();
+
+// DEBUG: Check what's being fetched
+error_log("DEBUG: Recent apps count: " . count($recent_apps));
+foreach ($recent_apps as $index => $app) {
+    error_log("DEBUG App #$index: ID={$app['id']}, Candidate={$app['candidate_name']}, Job={$app['job_title']}");
+}
 
 // Get Recent Jobs
 $stmt = $conn->prepare("SELECT * FROM jobs WHERE employer_id = ? ORDER BY created_at DESC LIMIT 3");
@@ -139,6 +142,17 @@ $recent_jobs = $stmt->fetchAll();
             background: #0056b3;
             transform: translateY(-1px);
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .debug-info {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            font-family: monospace;
         }
         
         @media (max-width: 768px) {
@@ -266,6 +280,18 @@ $recent_jobs = $stmt->fetchAll();
         <!-- Main Content -->
         <main>
             <h2 style="margin-bottom: 1.5rem; font-size: 1.8rem; color: #333;">Employer Dashboard</h2>
+
+            <!-- DEBUG INFORMATION -->
+            <div class="debug-info">
+                <strong>Debug Info:</strong><br>
+                Employer ID: <?php echo $employer_id; ?><br>
+                Active Jobs: <?php echo $active_jobs; ?><br>
+                Total Applications: <?php echo $total_applications; ?><br>
+                Recent Apps Found: <?php echo count($recent_apps); ?><br>
+                <?php foreach ($recent_apps as $index => $app): ?>
+                    App #<?php echo $index; ?>: ID=<?php echo $app['id']; ?>, Candidate=<?php echo htmlspecialchars($app['candidate_name']); ?><br>
+                <?php endforeach; ?>
+            </div>
 
             <!-- Stats -->
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
@@ -397,7 +423,8 @@ $recent_jobs = $stmt->fetchAll();
                                     </td>
                                     <td style="padding: 0.75rem;">
                                         <a href="employer_applications.php?id=<?php echo $app['id']; ?>" 
-                                           class="review-btn">
+                                           class="review-btn"
+                                           onclick="console.log('Review clicked for app ID: <?php echo $app['id']; ?>')">
                                            Review
                                         </a>
                                     </td>
@@ -489,6 +516,22 @@ $recent_jobs = $stmt->fetchAll();
         </main>
     </div>
 </div>
+
+<script>
+// Debug JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Dashboard loaded');
+    
+    // Add click tracking to review buttons
+    const reviewButtons = document.querySelectorAll('.review-btn');
+    reviewButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+            console.log('Review button clicked:', this.href);
+            // Don't prevent default - let it navigate
+        });
+    });
+});
+</script>
 
 <?php require_once 'includes/footer.php'; ?>
 </body>
