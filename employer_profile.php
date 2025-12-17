@@ -1,5 +1,5 @@
 <?php
-// employer_profile.php - FIXED VERSION (NO BASE64 IN DATABASE)
+// employer_profile.php - UPDATED VERSION (Option 1 - Modified documents table)
 require_once 'includes/header.php';
 require_login();
 
@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $description = sanitize($_POST['description'] ?? ($user['description'] ?? ''));
     $phone = sanitize($_POST['phone'] ?? ($user['phone'] ?? ''));
     
-    // Handle Logo Upload - SIMPLE APPROACH: Store only filename
+    // Handle Logo Upload
     $logo_filename = $user['logo'] ?? null;
     
     if (isset($_FILES['logo']) && $_FILES['logo']['error'] == 0) {
@@ -60,14 +60,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 try {
                     // 1. Delete any existing logo from documents table
-                    $conn->prepare("DELETE FROM documents WHERE candidate_id = ? AND type = 'company_logo'")
+                    $conn->prepare("DELETE FROM documents WHERE user_id = ? AND user_type = 'employer' AND type = 'company_logo'")
                          ->execute([$user_id]);
                     
-                    // 2. Read and store logo in documents table
+                    // 2. Read and store logo in documents table (NEW STRUCTURE)
                     $file_content = file_get_contents($_FILES['logo']['tmp_name']);
                     if ($file_content !== false) {
-                        $stmt = $conn->prepare("INSERT INTO documents (candidate_id, type, file_path, original_name, file_content, file_size, mime_type) 
-                                                VALUES (?, 'company_logo', ?, ?, ?, ?, ?)");
+                        $stmt = $conn->prepare("INSERT INTO documents (user_id, user_type, type, file_path, original_name, file_content, file_size, mime_type) 
+                                                VALUES (?, 'employer', 'company_logo', ?, ?, ?, ?, ?)");
                         $stmt->execute([
                             $user_id,
                             $new_filename,
@@ -82,6 +82,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                 } catch (PDOException $e) {
+                    // Log the error for debugging
+                    error_log("Database error saving logo: " . $e->getMessage());
+                    
                     // If database storage fails, try filesystem as fallback
                     $upload_dir = dirname(__DIR__) . '/uploads/logos/';
                     if (!is_dir($upload_dir)) {
@@ -92,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (move_uploaded_file($_FILES['logo']['tmp_name'], $destination)) {
                         $logo_filename = $new_filename;
                     } else {
-                        $error_msg = "Failed to save logo.";
+                        $error_msg = "Failed to save logo. Please try again.";
                     }
                 }
             } else {
@@ -104,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (isset($_POST['remove_logo'])) {
         // Remove logo
         try {
-            $conn->prepare("DELETE FROM documents WHERE candidate_id = ? AND type = 'company_logo'")
+            $conn->prepare("DELETE FROM documents WHERE user_id = ? AND user_type = 'employer' AND type = 'company_logo'")
                  ->execute([$user_id]);
             $logo_filename = null;
         } catch (Exception $e) {
@@ -195,9 +198,9 @@ function get_company_logo_url($user_id, $conn) {
         $employer = $stmt->fetch();
         
         if (!empty($employer['logo'])) {
-            // Check if it's stored in documents table
+            // Check if it's stored in documents table (NEW QUERY)
             $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
-                                    WHERE candidate_id = ? AND file_path = ? AND type = 'company_logo' 
+                                    WHERE user_id = ? AND user_type = 'employer' AND file_path = ? AND type = 'company_logo' 
                                     ORDER BY uploaded_at DESC LIMIT 1");
             $stmt->execute([$user_id, $employer['logo']]);
             $result = $stmt->fetch();
@@ -221,6 +224,7 @@ function get_company_logo_url($user_id, $conn) {
         }
     } catch (PDOException $e) {
         // Fall through to default
+        error_log("Error getting logo URL: " . $e->getMessage());
     }
     
     // Default logo using UI Avatars
