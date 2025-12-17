@@ -16,19 +16,28 @@ $error_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['document'])) {
     $type = $_POST['type'];
     
-    // Use the new upload function
+    // Use the upload function
     $result = upload_file($_FILES['document'], $conn);
     
     if (isset($result['error'])) {
         $error_msg = $result['error'];
     } else {
-        // Save to database
-        $file_id = save_file_to_db($conn, $user_id, $type, $result);
-        
-        if ($file_id) {
+        // Save to database - FIXED: Use correct column name 'user_id' and add user_type
+        try {
+            $stmt = $conn->prepare("INSERT INTO documents (user_id, user_type, type, file_path, original_name, file_content, file_size, mime_type) 
+                                    VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([
+                $user_id, 
+                $type, 
+                $result['path'], 
+                $result['original_name'],
+                $result['content'],
+                $result['size'],
+                $result['type']
+            ]);
             $success_msg = "✅ Document uploaded successfully! (Stored in database)";
-        } else {
-            $error_msg = "Failed to save document to database.";
+        } catch (PDOException $e) {
+            $error_msg = "Failed to save document to database: " . $e->getMessage();
         }
     }
 }
@@ -37,10 +46,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['document'])) {
 if (isset($_GET['delete'])) {
     $doc_id = $_GET['delete'];
     
-    // Verify ownership and delete
-    $stmt = $conn->prepare("DELETE FROM documents WHERE id = ? AND candidate_id = ?");
+    // Verify ownership and delete - FIXED: Use user_id and user_type
+    $stmt = $conn->prepare("DELETE FROM documents WHERE id = ? AND user_id = ? AND user_type = 'candidate'");
     if ($stmt->execute([$doc_id, $user_id])) {
         $success_msg = "Document deleted successfully.";
+        // Redirect to remove delete parameter from URL
+        redirect('candidate_documents.php');
     } else {
         $error_msg = "Failed to delete document.";
     }
@@ -50,7 +61,8 @@ if (isset($_GET['delete'])) {
 if (isset($_GET['view'])) {
     $doc_id = $_GET['view'];
     
-    $stmt = $conn->prepare("SELECT * FROM documents WHERE id = ? AND candidate_id = ?");
+    // FIXED: Use user_id and user_type
+    $stmt = $conn->prepare("SELECT * FROM documents WHERE id = ? AND user_id = ? AND user_type = 'candidate'");
     $stmt->execute([$doc_id, $user_id]);
     $doc = $stmt->fetch();
     
@@ -66,12 +78,14 @@ if (isset($_GET['view'])) {
     }
 }
 
-// Fetch Documents
-$stmt = $conn->prepare("SELECT id, type, original_name, file_size, uploaded_at FROM documents WHERE candidate_id = ? ORDER BY uploaded_at DESC");
+// Fetch Documents - FIXED: Use user_id and user_type
+$stmt = $conn->prepare("SELECT id, type, original_name, file_size, uploaded_at FROM documents 
+                        WHERE user_id = ? AND user_type = 'candidate' 
+                        ORDER BY uploaded_at DESC");
 $stmt->execute([$user_id]);
 $documents = $stmt->fetchAll();
 
-// Fetch Profile for sidebar - CRITICAL: This line was missing!
+// Fetch Profile for sidebar
 $stmt = $conn->prepare("SELECT * FROM candidates WHERE id = ?");
 $stmt->execute([$user_id]);
 $user = $stmt->fetch();
@@ -90,6 +104,10 @@ $user = $stmt->fetch();
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: background-color 0.2s;
+        }
+        .document-item:hover {
+            background-color: #f8f9fa;
         }
         .document-info {
             flex-grow: 1;
@@ -109,21 +127,21 @@ $user = $stmt->fetch();
             font-size: 0.8em;
             margin-left: 10px;
         }
-        .visibility-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.85em;
-            font-weight: 500;
-            margin-top: 5px;
-        }
-        .visible-badge {
+        .alert-success {
+            padding: 12px;
             background: #d4edda;
             color: #155724;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #c3e6cb;
         }
-        .hidden-badge {
+        .alert-error {
+            padding: 12px;
             background: #f8d7da;
             color: #721c24;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
         }
     </style>
 </head>
@@ -135,18 +153,14 @@ $user = $stmt->fetch();
             <div class="card" style="position: sticky; top: 20px;">
                 <div class="text-center mb-3">
                     <?php
-                    // FIXED: Use the correct function
                     $photo_url = get_profile_picture_url($user_id, $conn);
                     ?>
                     <img src="<?php echo $photo_url; ?>" alt="Profile"
                         style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin: 0 auto 1rem; border: 3px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo htmlspecialchars($user['full_name']); ?></h4>
+                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo htmlspecialchars($user['full_name'] ?? 'User'); ?></h4>
                     <p style="color: #666; font-size: 0.9em;">
                         <?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>
                     </p>
-                    <div class="visibility-badge <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? 'visible-badge' : 'hidden-badge'; ?>">
-                        <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? '👁️ Visible' : '👻 Hidden'; ?>
-                    </div>
                 </div>
                 <ul style="list-style: none; padding: 0;">
                     <li style="margin-bottom: 0.5rem;">
@@ -199,13 +213,13 @@ $user = $stmt->fetch();
                 </div>
 
                 <?php if ($success_msg): ?>
-                    <div class="alert alert-success" style="padding: 12px; background: #d4edda; color: #155724; border-radius: 5px; margin-bottom: 20px;">
-                        ✅ <?php echo $success_msg; ?>
+                    <div class="alert-success">
+                        <?php echo $success_msg; ?>
                     </div>
                 <?php endif; ?>
                 <?php if ($error_msg): ?>
-                    <div class="alert alert-error" style="padding: 12px; background: #f8d7da; color: #721c24; border-radius: 5px; margin-bottom: 20px;">
-                        ❌ <?php echo $error_msg; ?>
+                    <div class="alert-error">
+                        <?php echo $error_msg; ?>
                     </div>
                 <?php endif; ?>
 
@@ -213,17 +227,20 @@ $user = $stmt->fetch();
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                         <div class="form-group">
                             <label class="form-label" style="display: block; margin-bottom: 5px; font-weight: 500;">Document Type</label>
-                            <select name="type" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+                            <select name="type" class="form-control" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;" required>
+                                <option value="">Select type...</option>
                                 <option value="cv">📄 CV / Resume</option>
                                 <option value="diploma">🎓 Diploma / Degree</option>
                                 <option value="certificate">🏆 Certificate</option>
                                 <option value="cover_letter">✉️ Cover Letter</option>
+                                <option value="profile_pic">👤 Profile Picture</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label class="form-label" style="display: block; margin-bottom: 5px; font-weight: 500;">Select File (PDF, DOC, IMG, Max 5MB)</label>
+                            <label class="form-label" style="display: block; margin-bottom: 5px; font-weight: 500;">Select File (PDF, DOC, JPG, PNG - Max 5MB)</label>
                             <input type="file" name="document" class="form-control" required 
-                                   style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background: white;">
+                                   style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background: white;"
+                                   accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary" 
@@ -233,7 +250,7 @@ $user = $stmt->fetch();
                 </form>
                 
                 <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 0.9em;">
-                    <strong>ℹ️ Storage Method:</strong> Files are stored directly in the database for maximum reliability.
+                    <strong>ℹ️ Note:</strong> Files are stored securely in the database. Max file size: 5MB.
                 </div>
             </div>
 
@@ -250,11 +267,22 @@ $user = $stmt->fetch();
                 <?php if (count($documents) > 0): ?>
                     <div style="border: 1px solid #e9ecef; border-radius: 5px; overflow: hidden;">
                         <?php foreach ($documents as $doc): ?>
-                            <div class="document-item" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='transparent'">
+                            <div class="document-item">
                                 <div class="document-info">
                                     <div style="font-weight: 600; font-size: 1.1em; margin-bottom: 5px;">
                                         <?php echo htmlspecialchars($doc['original_name']); ?>
-                                        <span class="file-type"><?php echo strtoupper(str_replace('_', ' ', $doc['type'])); ?></span>
+                                        <span class="file-type">
+                                            <?php 
+                                            $type_labels = [
+                                                'cv' => 'CV',
+                                                'diploma' => 'Diploma',
+                                                'certificate' => 'Certificate',
+                                                'cover_letter' => 'Cover Letter',
+                                                'profile_pic' => 'Profile Picture'
+                                            ];
+                                            echo $type_labels[$doc['type']] ?? ucfirst($doc['type']);
+                                            ?>
+                                        </span>
                                     </div>
                                     <div class="file-size">
                                         Uploaded: <?php echo date('M d, Y', strtotime($doc['uploaded_at'])); ?> • 
@@ -282,11 +310,6 @@ $user = $stmt->fetch();
                         <div style="font-size: 3em; margin-bottom: 10px;">📂</div>
                         <h4 style="margin-bottom: 10px;">No Documents Yet</h4>
                         <p>Upload your first document using the form above.</p>
-                        <div style="margin-top: 20px;">
-                            <a href="#upload" class="btn btn-primary" style="text-decoration: none; padding: 10px 20px; background: #007bff; color: white; border-radius: 5px;">
-                                📤 Upload Your First Document
-                            </a>
-                        </div>
                     </div>
                 <?php endif; ?>
             </div>
@@ -305,11 +328,6 @@ function format_file_size($bytes) {
         return $bytes . ' bytes';
     }
 }
-
-// Remove error display in production
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(0);
 
 require_once 'includes/footer.php'; 
 ?>
