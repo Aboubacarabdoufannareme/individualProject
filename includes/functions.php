@@ -230,9 +230,16 @@ function get_role()
 function get_profile_picture_url($user_id, $conn) {
     // First check if profile_picture column exists in candidates
     try {
-        $stmt = $conn->prepare("SELECT profile_picture FROM candidates WHERE id = ?");
+        /*
+            $stmt = $conn->prepare("SELECT profile_picture FROM candidates WHERE id = ?");
         $stmt->execute([$user_id]);
         $user = $stmt->fetch();
+        **/
+
+        $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
+                            WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic' 
+                            ORDER BY uploaded_at DESC LIMIT 1");
+    $stmt->execute([$user_id]);
         
         if (!empty($user['profile_picture'])) {
             // Check if it's stored in documents table
