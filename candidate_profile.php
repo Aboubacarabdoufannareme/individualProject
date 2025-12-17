@@ -1,5 +1,5 @@
 <?php
-// candidate_profile.php - FIXED VERSION
+// candidate_profile.php - UPDATED VERSION
 require_once 'includes/header.php';
 require_login();
 
@@ -27,9 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $skills = sanitize($_POST['skills'] ?? ($user['skills'] ?? ''));
     $visibility = sanitize($_POST['visibility'] ?? ($user['visibility'] ?? 'visible'));
     
-    // Handle Profile Picture
-    $profile_picture_filename = $user['profile_picture'] ?? null;
-    
+    // Handle Profile Picture - FIXED: Use user_id and user_type
     if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] == 0) {
         $allowed = ['jpg', 'jpeg', 'png', 'gif'];
         $filename = $_FILES['profile_picture']['name'];
@@ -46,13 +44,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $new_filename = 'profile_' . $user_id . '_' . time() . '.' . $ext;
                     
                     try {
-                        // 1. Delete any existing profile picture
-                        $conn->prepare("DELETE FROM documents WHERE candidate_id = ? AND type = 'profile_pic'")
+                        // 1. Delete any existing profile picture - FIXED: Use user_id and user_type
+                        $conn->prepare("DELETE FROM documents WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic'")
                              ->execute([$user_id]);
                         
-                        // 2. Store new profile picture in documents table
-                        $stmt = $conn->prepare("INSERT INTO documents (candidate_id, type, file_path, original_name, file_content, file_size, mime_type) 
-                                                VALUES (?, 'profile_pic', ?, ?, ?, ?, ?)");
+                        // 2. Store new profile picture in documents table - FIXED: Correct column names
+                        $stmt = $conn->prepare("INSERT INTO documents (user_id, user_type, type, file_path, original_name, file_content, file_size, mime_type) 
+                                                VALUES (?, 'candidate', 'profile_pic', ?, ?, ?, ?, ?)");
                         $stmt->execute([
                             $user_id,
                             $new_filename,
@@ -62,11 +60,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $_FILES['profile_picture']['type']
                         ]);
                         
-                        // 3. Store filename reference in candidates table
-                        $profile_picture_filename = $new_filename;
+                        // 3. Store filename reference in candidates table (optional)
+                        // Uncomment if you want to store filename in candidates table
+                        /*
+                        $conn->prepare("UPDATE candidates SET profile_picture = ? WHERE id = ?")
+                             ->execute([$new_filename, $user_id]);
+                        */
                         
                     } catch (PDOException $e) {
-                        $error_msg = "Failed to save profile picture to database.";
+                        $error_msg = "Failed to save profile picture: " . $e->getMessage();
                     }
                 } else {
                     $error_msg = "Could not read uploaded image.";
@@ -78,44 +80,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error_msg = "Invalid image format. Use JPG, PNG, or GIF.";
         }
     } elseif (isset($_POST['remove_profile_picture'])) {
-        // Remove profile picture
+        // Remove profile picture - FIXED: Use user_id and user_type
         try {
-            $conn->prepare("DELETE FROM documents WHERE candidate_id = ? AND type = 'profile_pic'")
+            $conn->prepare("DELETE FROM documents WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic'")
                  ->execute([$user_id]);
-            $profile_picture_filename = null;
+            // Also clear from candidates table if stored there
+            // $conn->prepare("UPDATE candidates SET profile_picture = NULL WHERE id = ?")->execute([$user_id]);
         } catch (Exception $e) {
             // Silently continue
-            $profile_picture_filename = null;
+            error_log("Remove profile error: " . $e->getMessage());
         }
     }
 
     if (empty($error_msg)) {
         try {
-            // Update candidates table
-            $stmt = $conn->prepare("
-                UPDATE candidates 
-                SET full_name = ?, 
-                    title = ?, 
-                    phone = ?, 
-                    bio = ?, 
-                    education_level = ?, 
-                    skills = ?, 
-                    visibility = ?, 
-                    profile_picture = ?
-                WHERE id = ?
-            ");
+            // First, check if visibility column exists
+            $check_column = $conn->query("SHOW COLUMNS FROM candidates LIKE 'visibility'");
+            $has_visibility = $check_column->rowCount() > 0;
             
-            $stmt->execute([
-                $full_name, 
-                $title, 
-                $phone, 
-                $bio, 
-                $education_level, 
-                $skills, 
-                $visibility, 
-                $profile_picture_filename,
-                $user_id
-            ]);
+            if ($has_visibility) {
+                // Update with visibility
+                $stmt = $conn->prepare("
+                    UPDATE candidates 
+                    SET full_name = ?, 
+                        title = ?, 
+                        phone = ?, 
+                        bio = ?, 
+                        education_level = ?, 
+                        skills = ?, 
+                        visibility = ?
+                    WHERE id = ?
+                ");
+                $stmt->execute([
+                    $full_name, 
+                    $title, 
+                    $phone, 
+                    $bio, 
+                    $education_level, 
+                    $skills, 
+                    $visibility,
+                    $user_id
+                ]);
+            } else {
+                // Update without visibility
+                $stmt = $conn->prepare("
+                    UPDATE candidates 
+                    SET full_name = ?, 
+                        title = ?, 
+                        phone = ?, 
+                        bio = ?, 
+                        education_level = ?, 
+                        skills = ?
+                    WHERE id = ?
+                ");
+                $stmt->execute([
+                    $full_name, 
+                    $title, 
+                    $phone, 
+                    $bio, 
+                    $education_level, 
+                    $skills,
+                    $user_id
+                ]);
+            }
             
             $success_msg = "✅ Profile updated successfully!";
             
@@ -175,6 +202,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: #f8d7da;
             color: #721c24;
         }
+        .alert-success {
+            padding: 12px;
+            background: #d4edda;
+            color: #155724;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-error {
+            padding: 12px;
+            background: #f8d7da;
+            color: #721c24;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
     </style>
 </head>
 <body>
@@ -185,18 +228,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="card" style="position: sticky; top: 20px;">
                 <div class="text-center mb-3">
                     <?php
-                    // FIXED: Use the correct function signature
                     $photo_url = get_profile_picture_url($user_id, $conn);
                     ?>
                     <img src="<?php echo $photo_url; ?>" 
                          alt="Profile" class="profile-preview" id="profilePreview">
-                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo htmlspecialchars($user['full_name']); ?></h4>
+                    <h4 style="margin: 1rem 0 0.5rem;"><?php echo htmlspecialchars($user['full_name'] ?? 'User'); ?></h4>
                     <p style="color: #666; font-size: 0.9em;">
                         <?php echo htmlspecialchars($user['title'] ?? 'Job Seeker'); ?>
                     </p>
-                    <div class="visibility-badge <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? 'visible-badge' : 'hidden-badge'; ?>">
-                        <?php echo ($user['visibility'] ?? 'visible') === 'visible' ? '👁️ Visible' : '👻 Hidden'; ?>
+                    <?php if (isset($user['visibility'])): ?>
+                    <div class="visibility-badge <?php echo $user['visibility'] === 'visible' ? 'visible-badge' : 'hidden-badge'; ?>">
+                        <?php echo $user['visibility'] === 'visible' ? '👁️ Visible' : '👻 Hidden'; ?>
                     </div>
+                    <?php endif; ?>
                 </div>
                 <ul style="list-style: none; padding: 0;">
                     <li style="margin-bottom: 0.5rem;">
@@ -249,13 +293,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <?php if ($success_msg): ?>
-                    <div class="alert alert-success" style="padding: 12px; background: #d4edda; color: #155724; border-radius: 5px; margin-bottom: 20px;">
+                    <div class="alert-success">
                         ✅ <?php echo $success_msg; ?>
                     </div>
                 <?php endif; ?>
                 
                 <?php if ($error_msg): ?>
-                    <div class="alert alert-error" style="padding: 12px; background: #f8d7da; color: #721c24; border-radius: 5px; margin-bottom: 20px;">
+                    <div class="alert-error">
                         ❌ <?php echo $error_msg; ?>
                     </div>
                 <?php endif; ?>
@@ -267,8 +311,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Profile Picture</h3>
                         <div class="photo-controls">
                             <?php
-                            // FIXED: Use the correct function signature here too
                             $current_photo_url = get_profile_picture_url($user_id, $conn);
+                            // Check if user has a custom profile picture
+                            $stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate' AND type = 'profile_pic'");
+                            $stmt->execute([$user_id]);
+                            $has_custom_photo = $stmt->fetch()['count'] > 0;
                             ?>
                             <img src="<?php echo $current_photo_url; ?>" 
                                  alt="Current" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 3px solid #ddd;"
@@ -277,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type="file" name="profile_picture" id="profilePictureInput" 
                                    accept="image/*" style="margin-bottom: 10px; padding: 8px;">
                             
-                            <?php if (!empty($user['profile_picture'])): ?>
+                            <?php if ($has_custom_photo): ?>
                             <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer;">
                                 <input type="checkbox" name="remove_profile_picture" value="1" id="removePhoto">
                                 <span style="font-size: 0.9em; color: #721c24;">🗑️ Remove current photo</span>
@@ -298,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div>
                                 <label style="font-weight: 500; display: block; margin-bottom: 5px;">Full Name *</label>
                                 <input type="text" name="full_name" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
-                                    value="<?php echo htmlspecialchars($user['full_name']); ?>" required>
+                                    value="<?php echo htmlspecialchars($user['full_name'] ?? ''); ?>" required>
                             </div>
 
                             <div>
@@ -358,7 +405,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <!-- Visibility -->
+                    <!-- Visibility Section (only if column exists) -->
+                    <?php
+                    $check_column = $conn->query("SHOW COLUMNS FROM candidates LIKE 'visibility'");
+                    $has_visibility = $check_column->rowCount() > 0;
+                    
+                    if ($has_visibility):
+                    ?>
                     <div class="form-section">
                         <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;">Profile Visibility</h3>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
@@ -388,6 +441,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                         </div>
                     </div>
+                    <?php endif; ?>
 
                     <!-- Submit -->
                     <div style="display: flex; gap: 1rem; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0;">
@@ -409,15 +463,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <script>
 // Preview image before upload
-document.getElementById('profilePictureInput').addEventListener('change', function() {
+document.getElementById('profilePictureInput')?.addEventListener('change', function() {
     if (this.files && this.files[0]) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            document.getElementById('profilePreview').src = e.target.result;
-            document.getElementById('currentPhoto').src = e.target.result;
+            if (document.getElementById('profilePreview')) {
+                document.getElementById('profilePreview').src = e.target.result;
+            }
+            if (document.getElementById('currentPhoto')) {
+                document.getElementById('currentPhoto').src = e.target.result;
+            }
             // Uncheck remove photo if selecting new one
-            if (document.getElementById('removePhoto')) {
-                document.getElementById('removePhoto').checked = false;
+            const removePhoto = document.getElementById('removePhoto');
+            if (removePhoto) {
+                removePhoto.checked = false;
             }
         }
         reader.readAsDataURL(this.files[0]);
@@ -425,29 +484,45 @@ document.getElementById('profilePictureInput').addEventListener('change', functi
 });
 
 // When remove photo is checked
-document.getElementById('removePhoto')?.addEventListener('change', function() {
-    if (this.checked) {
-        document.getElementById('profilePictureInput').value = '';
-        // Show default avatar
-        const defaultAvatar = '<?php echo get_profile_picture_url($user_id, $conn); ?>';
-        document.getElementById('profilePreview').src = defaultAvatar;
-        document.getElementById('currentPhoto').src = defaultAvatar;
-    }
-});
+const removePhoto = document.getElementById('removePhoto');
+if (removePhoto) {
+    removePhoto.addEventListener('change', function() {
+        if (this.checked) {
+            const fileInput = document.getElementById('profilePictureInput');
+            if (fileInput) {
+                fileInput.value = '';
+            }
+            // Show default avatar
+            const defaultAvatar = '<?php echo "https://ui-avatars.com/api/?name=" . urlencode($user["full_name"] ?? "User") . "&background=0ea5e9&color=fff&size=128"; ?>';
+            if (document.getElementById('profilePreview')) {
+                document.getElementById('profilePreview').src = defaultAvatar;
+            }
+            if (document.getElementById('currentPhoto')) {
+                document.getElementById('currentPhoto').src = defaultAvatar;
+            }
+        }
+    });
+}
 
 // Form validation
 document.getElementById('profileForm').addEventListener('submit', function(e) {
     const fullName = this.querySelector('input[name="full_name"]').value.trim();
     const title = this.querySelector('input[name="title"]').value.trim();
     
-    if (!fullName || !title) {
+    if (!fullName) {
         e.preventDefault();
-        alert('Please fill in Full Name and Professional Title');
+        alert('Please fill in your Full Name');
+        return false;
+    }
+    
+    if (!title) {
+        e.preventDefault();
+        alert('Please fill in your Professional Title');
         return false;
     }
     
     const fileInput = this.querySelector('input[name="profile_picture"]');
-    if (fileInput.files.length > 0) {
+    if (fileInput && fileInput.files.length > 0) {
         const fileSize = fileInput.files[0].size / 1024 / 1024;
         if (fileSize > 2) {
             e.preventDefault();
@@ -461,9 +536,5 @@ document.getElementById('profileForm').addEventListener('submit', function(e) {
 </script>
 
 <?php 
-// Remove error display in production
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(0);
 require_once 'includes/footer.php'; 
 ?>
