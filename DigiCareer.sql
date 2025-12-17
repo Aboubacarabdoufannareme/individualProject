@@ -144,3 +144,20 @@ ALTER TABLE candidates MODIFY profile_picture TEXT DEFAULT NULL;
 -- Add 'profile_pic' to the ENUM type
 ALTER TABLE documents MODIFY COLUMN type 
 ENUM('cv', 'diploma', 'certificate', 'cover_letter', 'profile_pic') NOT NULL;
+
+-- Drop and recreate documents table with flexible structure
+DROP TABLE IF EXISTS documents;
+
+CREATE TABLE documents (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,  -- Generic user_id
+    user_type ENUM('candidate', 'employer') NOT NULL,
+    type ENUM('cv', 'diploma', 'certificate', 'cover_letter', 'company_logo', 'profile_pic') NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    file_content LONGBLOB,
+    file_size INT,
+    mime_type VARCHAR(100),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_type (user_id, user_type, type)
+);
