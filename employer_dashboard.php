@@ -50,183 +50,430 @@ $stmt->execute([$employer_id]);
 $recent_jobs = $stmt->fetchAll();
 ?>
 
-<div class="container mt-2">
-    <div class="row" style="display: grid; grid-template-columns: 250px 1fr; gap: 2rem;">
-        <!-- Sidebar -->
-        <aside>
-            <div class="card">
-                <div class="text-center mb-2">
-                    <?php
-                    $logo_url = (isset($user['logo']) && $user['logo']) ? 'uploads/logos/' . $user['logo'] : "https://ui-avatars.com/api/?name=" . urlencode($user['company_name']) . "&background=0ea5e9&color=fff";
-                    ?>
-                    <img src="<?php echo $logo_url; ?>" alt="Company"
-                        style="width: 80px; height: 80px; border-radius: var(--radius-lg); margin: 0 auto 1rem; object-fit: contain;">
-                    <h4><?php echo sanitize($user['company_name']); ?></h4>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employer Dashboard - DigiCareer</title>
+    <style>
+        :root {
+            --primary: #007bff;
+            --secondary: #6c757d;
+            --success: #28a745;
+            --danger: #dc3545;
+            --accent: #fd7e14;
+            --text-main: #333;
+            --text-muted: #666;
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+            color: var(--text-main);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        .mt-2 {
+            margin-top: 2rem;
+        }
+        
+        .mb-2 {
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+        
+        .row {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 2rem;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-sm);
+            text-decoration: none;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+        }
+        
+        .btn-outline:hover {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        h2 {
+            font-size: 1.8rem;
+            color: var(--text-main);
+            margin-bottom: 1.5rem;
+        }
+        
+        h3 {
+            font-size: 1.3rem;
+            color: var(--text-main);
+            margin-bottom: 1rem;
+        }
+        
+        h4 {
+            font-size: 1.1rem;
+            margin: 0;
+        }
+        
+        h5 {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        
+        aside {
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }
+        
+        main {
+            flex: 1;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        
+        thead tr {
+            border-bottom: 2px solid #f1f5f9;
+        }
+        
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        li {
+            margin-bottom: 0.5rem;
+        }
+        
+        li a {
+            display: block;
+            padding: 0.5rem;
+            border-radius: var(--radius-sm);
+            color: var(--text-main);
+            text-decoration: none;
+            transition: background-color 0.2s;
+        }
+        
+        li a:hover {
+            background-color: #f8f9fa;
+        }
+        
+        @media (max-width: 768px) {
+            .row {
+                grid-template-columns: 1fr;
+            }
+            
+            aside {
+                position: static;
+            }
+            
+            .container {
+                padding: 0 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-2">
+        <div class="row">
+            <!-- Sidebar -->
+            <aside>
+                <div class="card">
+                    <div class="text-center mb-2">
+                        <?php
+                        // Get company logo using the function from employer_profile.php
+                        // If the function doesn't exist in includes, define it here temporarily
+                        if (!function_exists('get_company_logo_url')) {
+                            function get_company_logo_url($user_id, $conn) {
+                                try {
+                                    $stmt = $conn->prepare("SELECT logo FROM employers WHERE id = ?");
+                                    $stmt->execute([$user_id]);
+                                    $employer = $stmt->fetch();
+                                    
+                                    if (!empty($employer['logo'])) {
+                                        // Check documents table first
+                                        try {
+                                            $stmt = $conn->prepare("SELECT file_content, mime_type FROM documents 
+                                                                    WHERE user_id = ? AND user_type = 'employer' AND file_path = ? AND type = 'company_logo' 
+                                                                    ORDER BY uploaded_at DESC LIMIT 1");
+                                            $stmt->execute([$user_id, $employer['logo']]);
+                                            $result = $stmt->fetch();
+                                            
+                                            if ($result && !empty($result['file_content'])) {
+                                                return 'data:' . $result['mime_type'] . ';base64,' . base64_encode($result['file_content']);
+                                            }
+                                        } catch (Exception $e) {
+                                            // Continue to filesystem check
+                                        }
+                                        
+                                        // Try filesystem
+                                        $possible_paths = [
+                                            'uploads/logos/' . $employer['logo'],
+                                            'uploads/' . $employer['logo'],
+                                            $employer['logo']
+                                        ];
+                                        
+                                        foreach ($possible_paths as $path) {
+                                            if (file_exists($path)) {
+                                                return $path;
+                                            }
+                                        }
+                                    }
+                                } catch (PDOException $e) {
+                                    // Fall through
+                                }
+                                
+                                $stmt = $conn->prepare("SELECT company_name FROM employers WHERE id = ?");
+                                $stmt->execute([$user_id]);
+                                $employer = $stmt->fetch();
+                                $name = urlencode($employer['company_name'] ?? 'Company');
+                                return "https://ui-avatars.com/api/?name=$name&background=0ea5e9&color=fff&size=128";
+                            }
+                        }
+                        
+                        $logo_url = get_company_logo_url($employer_id, $conn);
+                        ?>
+                        <img src="<?php echo $logo_url; ?>" alt="Company Logo" 
+                             style="width: 80px; height: 80px; border-radius: var(--radius-lg); margin: 0 auto 1rem; object-fit: contain; border: 2px solid #e2e8f0;">
+                        <h4><?php echo htmlspecialchars($user['company_name']); ?></h4>
+                        <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.5rem;">
+                            <?php echo htmlspecialchars($user['industry'] ?? 'No industry specified'); ?>
+                        </p>
+                    </div>
+                    <ul>
+                        <li><a href="employer_dashboard.php" style="color: var(--primary); font-weight: 600; background-color: #e7f3ff;">
+                            📊 Dashboard</a></li>
+                        <li><a href="employer_profile.php">🏢 Edit Profile</a></li>
+                        <li><a href="employer_post_job.php">📝 Post a Job</a></li>
+                        <li><a href="employer_applications.php">📄 Applications</a></li>
+                        <li><a href="candidates.php">🔍 Search Candidates</a></li>
+                        <li style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
+                            <a href="logout.php" style="color: var(--danger);">🚪 Logout</a>
+                        </li>
+                    </ul>
                 </div>
-                <ul style="list-style: none;">
-                    <li style="margin-bottom: 0.5rem;"><a href="employer_dashboard.php"
-                            style="color: var(--secondary); font-weight: 600;">Dashboard</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="employer_profile.php"
-                            style="color: var(--text-main);">Edit Profile</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="employer_post_job.php"
-                            style="color: var(--text-main);">Post a Job</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="employer_applications.php"
-                            style="color: var(--text-main);">Applications</a></li>
-                    <li style="margin-bottom: 0.5rem;"><a href="candidates.php" style="color: var(--text-main);">Search
-                            Candidates</a></li>
-                    <li style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;"><a href="logout.php"
-                            style="color: var(--danger);">Logout</a></li>
-                </ul>
-            </div>
-        </aside>
+            </aside>
 
-        <!-- Main Content -->
-        <main>
-            <h2 class="mb-2">Employer Dashboard</h2>
+            <!-- Main Content -->
+            <main>
+                <h2 class="mb-2">Employer Dashboard</h2>
 
-            <!-- Stats -->
-            <div
-                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-                <div class="card" style="border-left: 4px solid var(--secondary);">
-                    <h5 style="color: var(--text-muted); font-size: 0.9rem;">Active Jobs</h5>
-                    <p style="font-size: 2rem; font-weight: 700; color: var(--primary); margin: 0;">
-                        <?php echo $active_jobs; ?>
-                    </p>
+                <!-- Stats -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                    <div class="card" style="border-left: 4px solid var(--primary);">
+                        <h5 style="color: var(--text-muted); font-size: 0.9rem;">Active Jobs</h5>
+                        <p style="font-size: 2rem; font-weight: 700; color: var(--primary); margin: 0;">
+                            <?php echo $active_jobs; ?>
+                        </p>
+                    </div>
+                    <div class="card" style="border-left: 4px solid var(--accent);">
+                        <h5 style="color: var(--text-muted); font-size: 0.9rem;">Total Applications</h5>
+                        <p style="font-size: 2rem; font-weight: 700; color: var(--accent); margin: 0;">
+                            <?php echo $total_applications; ?>
+                        </p>
+                    </div>
+                    <div class="card" style="border-left: 4px solid var(--success); display: flex; align-items: center; justify-content: center;">
+                        <a href="employer_post_job.php" class="btn btn-primary">📝 Post New Job</a>
+                    </div>
                 </div>
-                <div class="card" style="border-left: 4px solid var(--accent);">
-                    <h5 style="color: var(--text-muted); font-size: 0.9rem;">Total Applications</h5>
-                    <p style="font-size: 2rem; font-weight: 700; color: var(--primary); margin: 0;">
-                        <?php echo $total_applications; ?>
-                    </p>
-                </div>
-                <div class="card"
-                    style="border-left: 4px solid var(--success); display: flex; align-items: center; justify-content: center;">
-                    <a href="employer_post_job.php" class="btn btn-primary">Post New Job</a>
-                </div>
-            </div>
 
-            <?php
-            // Fetch Sent Invitations
-            $stmt = $conn->prepare("
-                SELECT i.*, j.title as job_title, c.full_name as candidate_name 
-                FROM invitations i 
-                JOIN jobs j ON i.job_id = j.id 
-                JOIN candidates c ON i.candidate_id = c.id 
-                WHERE i.employer_id = ? 
-                ORDER BY i.created_at DESC 
-                LIMIT 5
-            ");
-            $stmt->execute([$employer_id]);
-            $invitations = $stmt->fetchAll();
-            ?>
+                <?php
+                // Fetch Sent Invitations
+                $stmt = $conn->prepare("
+                    SELECT i.*, j.title as job_title, c.full_name as candidate_name 
+                    FROM invitations i 
+                    JOIN jobs j ON i.job_id = j.id 
+                    JOIN candidates c ON i.candidate_id = c.id 
+                    WHERE i.employer_id = ? 
+                    ORDER BY i.created_at DESC 
+                    LIMIT 5
+                ");
+                $stmt->execute([$employer_id]);
+                $invitations = $stmt->fetchAll();
+                ?>
 
-            <!-- Sent Invitations -->
-            <?php if (count($invitations) > 0): ?>
-                <div class="card mb-2">
-                    <h3 class="mb-2">Sent Invitations</h3>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="text-align: left; border-bottom: 2px solid #f1f5f9;">
-                                <th style="padding: 0.75rem;">Candidate</th>
-                                <th style="padding: 0.75rem;">Job</th>
-                                <th style="padding: 0.75rem;">Date</th>
-                                <th style="padding: 0.75rem;">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($invitations as $inv): ?>
-                                <tr style="border-bottom: 1px solid #f1f5f9;">
-                                    <td style="padding: 0.75rem; font-weight: 500;">
-                                        <?php echo sanitize($inv['candidate_name']); ?>
-                                    </td>
-                                    <td style="padding: 0.75rem;"><?php echo sanitize($inv['job_title']); ?></td>
-                                    <td style="padding: 0.75rem; color: var(--text-muted);">
-                                        <?php echo date('M d', strtotime($inv['created_at'])); ?>
-                                    </td>
-                                    <td style="padding: 0.75rem;">
-                                        <span style="
-                                            padding: 0.25rem 0.75rem; 
-                                            border-radius: 999px; 
-                                            font-size: 0.85rem; 
-                                            background: <?php echo $inv['status'] == 'accepted' ? '#dcfce7' : ($inv['status'] == 'declined' ? '#fee2e2' : '#e0f2fe'); ?>;
-                                            color: <?php echo $inv['status'] == 'accepted' ? '#166534' : ($inv['status'] == 'declined' ? '#991b1b' : '#075985'); ?>;
-                                        ">
-                                            <?php echo ucfirst($inv['status']); ?>
-                                        </span>
-                                    </td>
+                <!-- Sent Invitations -->
+                <?php if (count($invitations) > 0): ?>
+                    <div class="card mb-2">
+                        <h3 class="mb-2">Sent Invitations</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Candidate</th>
+                                    <th>Job</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
                                 </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
-
-            <!-- Recent Applications -->
-            <div class="card mb-2">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <h3 style="margin: 0;">Recent Applications</h3>
-                    <a href="employer_applications.php" style="font-size: 0.9rem; color: var(--secondary);">View All</a>
-                </div>
-
-                <?php if (count($recent_apps) > 0): ?>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="text-align: left; border-bottom: 2px solid #f1f5f9;">
-                                <th style="padding: 0.75rem;">Candidate</th>
-                                <th style="padding: 0.75rem;">Job</th>
-                                <th style="padding: 0.75rem;">Date</th>
-                                <th style="padding: 0.75rem;">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($recent_apps as $app): ?>
-                                <tr style="border-bottom: 1px solid #f1f5f9;">
-                                    <td style="padding: 0.75rem; font-weight: 500;">
-                                        <?php echo sanitize($app['candidate_name']); ?>
-                                    </td>
-                                    <td style="padding: 0.75rem;"><?php echo sanitize($app['job_title']); ?></td>
-                                    <td style="padding: 0.75rem; color: var(--text-muted);">
-                                        <?php echo date('M d', strtotime($app['applied_at'])); ?>
-                                    </td>
-                                    <td style="padding: 0.75rem;">
-                                        <a href="employer_applications.php?id=<?php echo $app['id']; ?>" class="btn btn-outline"
-                                            style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Review</a>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                <?php else: ?>
-                    <p style="color: var(--text-muted);">No applications received yet.</p>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($invitations as $inv): ?>
+                                    <tr>
+                                        <td style="font-weight: 500;">
+                                            <?php echo htmlspecialchars($inv['candidate_name']); ?>
+                                        </td>
+                                        <td><?php echo htmlspecialchars($inv['job_title']); ?></td>
+                                        <td style="color: var(--text-muted);">
+                                            <?php echo date('M d', strtotime($inv['created_at'])); ?>
+                                        </td>
+                                        <td>
+                                            <span style="
+                                                padding: 0.25rem 0.75rem; 
+                                                border-radius: 999px; 
+                                                font-size: 0.85rem; 
+                                                background: <?php echo $inv['status'] == 'accepted' ? '#dcfce7' : ($inv['status'] == 'declined' ? '#fee2e2' : '#e0f2fe'); ?>;
+                                                color: <?php echo $inv['status'] == 'accepted' ? '#166534' : ($inv['status'] == 'declined' ? '#991b1b' : '#075985'); ?>;
+                                            ">
+                                                <?php echo ucfirst($inv['status']); ?>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 <?php endif; ?>
-            </div>
 
-            <!-- Your Jobs -->
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <h3 style="margin: 0;">Your Recent Jobs</h3>
+                <!-- Recent Applications -->
+                <div class="card mb-2">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0;">Recent Applications</h3>
+                        <a href="employer_applications.php" style="font-size: 0.9rem; color: var(--primary);">View All →</a>
+                    </div>
+
+                    <?php if (count($recent_apps) > 0): ?>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Candidate</th>
+                                    <th>Job</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($recent_apps as $app): ?>
+                                    <tr>
+                                        <td style="font-weight: 500;">
+                                            <?php echo htmlspecialchars($app['candidate_name']); ?>
+                                        </td>
+                                        <td><?php echo htmlspecialchars($app['job_title']); ?></td>
+                                        <td style="color: var(--text-muted);">
+                                            <?php echo date('M d', strtotime($app['applied_at'])); ?>
+                                        </td>
+                                        <td>
+                                            <span style="
+                                                padding: 0.25rem 0.75rem; 
+                                                border-radius: 999px; 
+                                                font-size: 0.85rem; 
+                                                background: <?php echo $app['status'] == 'accepted' ? '#dcfce7' : ($app['status'] == 'rejected' ? '#fee2e2' : '#e0f2fe'); ?>;
+                                                color: <?php echo $app['status'] == 'accepted' ? '#166534' : ($app['status'] == 'rejected' ? '#991b1b' : '#075985'); ?>;
+                                            ">
+                                                <?php echo ucfirst($app['status']); ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <a href="employer_applications.php?id=<?php echo $app['id']; ?>" class="btn btn-outline"
+                                                style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Review</a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php else: ?>
+                        <p style="color: var(--text-muted); text-align: center; padding: 2rem;">No applications received yet.</p>
+                    <?php endif; ?>
                 </div>
-                <?php if (count($recent_jobs) > 0): ?>
-                    <?php foreach ($recent_jobs as $job): ?>
-                        <div
-                            style="padding: 1rem; border: 1px solid #e2e8f0; border-radius: var(--radius-md); margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <div style="font-weight: 600;"><?php echo sanitize($job['title']); ?></div>
-                                <div style="font-size: 0.85rem; color: var(--text-muted);">
-                                    <?php echo ucfirst($job['status']); ?> • Posted
-                                    <?php echo date('M d', strtotime($job['created_at'])); ?>
+
+                <!-- Your Jobs -->
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0;">Your Recent Jobs</h3>
+                        <a href="employer_post_job.php" style="font-size: 0.9rem; color: var(--primary);">Post New Job</a>
+                    </div>
+                    <?php if (count($recent_jobs) > 0): ?>
+                        <?php foreach ($recent_jobs as $job): ?>
+                            <div style="padding: 1rem; border: 1px solid #e2e8f0; border-radius: var(--radius-md); margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: 600;"><?php echo htmlspecialchars($job['title']); ?></div>
+                                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+                                        <?php echo ucfirst($job['type']); ?> • 
+                                        <span style="color: <?php echo $job['status'] == 'active' ? 'var(--success)' : 'var(--danger)'; ?>;">
+                                            <?php echo ucfirst($job['status']); ?>
+                                        </span> • 
+                                        Posted <?php echo date('M d, Y', strtotime($job['created_at'])); ?>
+                                    </div>
+                                </div>
+                                <div>
+                                    <a href="employer_job_details.php?id=<?php echo $job['id']; ?>" class="btn btn-outline"
+                                        style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">View</a>
                                 </div>
                             </div>
-                            <!-- In a real app we'd add edit/delete here -->
+                        <?php endforeach; ?>
+                        <div style="text-align: center; margin-top: 1rem;">
+                            <a href="employer_applications.php" style="color: var(--primary); font-size: 0.9rem;">View All Jobs</a>
                         </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <p style="color: var(--text-muted);">You haven't posted any jobs yet.</p>
-                <?php endif; ?>
-            </div>
-
-        </main>
+                    <?php else: ?>
+                        <p style="color: var(--text-muted); text-align: center; padding: 2rem;">
+                            You haven't posted any jobs yet. 
+                            <a href="employer_post_job.php" style="color: var(--primary);">Post your first job</a>
+                        </p>
+                    <?php endif; ?>
+                </div>
+            </main>
+        </div>
     </div>
-</div>
 
-<?php require_once 'includes/footer.php'; ?>
+    <?php require_once 'includes/footer.php'; ?>
+</body>
+</html>
