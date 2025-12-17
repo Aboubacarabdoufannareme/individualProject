@@ -33,7 +33,7 @@ $stmt->execute([$user_id]);
 $applications = $stmt->fetchAll();
 
 // Fetch Documents stats
-$stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE candidate_id = ?");
+$$stmt = $conn->prepare("SELECT COUNT(*) as count FROM documents WHERE user_id = ? AND user_type = 'candidate'");
 $stmt->execute([$user_id]);
 $doc_count = $stmt->fetch()['count'];
 ?>
