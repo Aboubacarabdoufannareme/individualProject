@@ -43,6 +43,9 @@ $stmt = $conn->prepare("
 ");
 $stmt->execute([$employer_id]);
 $recent_apps = $stmt->fetchAll();
+echo "<!-- DEBUG: Recent apps count: " . count($recent_apps) . " -->\n";
+foreach ($recent_apps as $index => $app) {
+    echo "<!-- App #$index: ID={$app['id']}, Candidate={$app['candidate_name']} -->\n";
 
 // Get Recent Jobs
 $stmt = $conn->prepare("SELECT * FROM jobs WHERE employer_id = ? ORDER BY created_at DESC LIMIT 3");
