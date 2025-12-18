@@ -94,3 +94,5 @@ The website focuses on simplicity , accessibility, and relevance to the Niger Jo
   - jobs
   - jobs_applications
   - documents
+  - user_tokens
+  - rest_password
