@@ -28,6 +28,7 @@ The website focuses on simplicity , accessibility, and relevance to the Niger Jo
 
 - Register and login securely
 - Edit company profile
+- view candidates list
 - Search candidate using live search
 - Manage job applications(Approve, reject, pending )
 - Post job
@@ -49,7 +50,7 @@ The website focuses on simplicity , accessibility, and relevance to the Niger Jo
   - MySQL
   ### Tools 
   - GitHub
-  - Apache (XAMPP_
+  - Apache (XAMPP_)
   - Live Hosting Server
 
   ## Security Features
@@ -76,10 +77,11 @@ The website focuses on simplicity , accessibility, and relevance to the Niger Jo
     upload CV,
     apply job,
     accept and reject job,
-    hidden profile from the candidate list.
+    Profile Completeness.
   - Employer dashboard :
     Job posting
     candidate search
+    view candidate
     profile management
     inviting candidate
     manage applications
@@ -92,7 +94,8 @@ The website focuses on simplicity , accessibility, and relevance to the Niger Jo
   - candidates
   - employers
   - jobs
-  - jobs_applications
+  - applications
   - documents
   - user_tokens
-  - rest_password
+  - password_reset
+  - invitations
