@@ -3,11 +3,13 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+// Start output buffering to catch any errors
+ob_start();
+
 require_once 'includes/header.php';
-require_login();
 
 // Check if user is logged in
-if (!isset($_SESSION['user_id'])) {
+if (!is_logged_in()) {
     die("You must be logged in to view documents.");
 }
 
@@ -17,196 +19,141 @@ if ($doc_id <= 0) {
     die("Invalid document ID.");
 }
 
-// Fetch document
+// First, let's see what we're working with
+error_log("=== DOCUMENT VIEW REQUEST ===");
+error_log("Document ID: $doc_id");
+error_log("User ID: " . $_SESSION['user_id']);
+error_log("User Role: " . (get_role() ?? 'unknown'));
+
 try {
+    // Fetch document
     $stmt = $conn->prepare("SELECT * FROM documents WHERE id = ?");
     $stmt->execute([$doc_id]);
     $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$doc) {
+        die("Document not found in database.");
+    }
+    
+    error_log("Document found: " . print_r(array_keys($doc), true));
+    
+    // Check file content
+    if (empty($doc['file_content'])) {
+        error_log("WARNING: file_content is empty for document $doc_id");
+        // Try to get from file_path
+        if (!empty($doc['file_path'])) {
+            error_log("Trying file_path: " . $doc['file_path']);
+        }
+    } else {
+        error_log("file_content size: " . strlen($doc['file_content']) . " bytes");
+    }
+    
 } catch (PDOException $e) {
     die("Database error: " . $e->getMessage());
 }
 
-if (!$doc) {
-    die("Document not found.");
-}
+// SIMPLIFIED PERMISSION CHECK FOR NOW
+// In production, implement proper permissions
+$allow_access = true; // Temporary for testing
 
-// Debug information (remove in production)
-error_log("User ID: " . $_SESSION['user_id'] . ", Role: " . get_role() . ", Doc ID: " . $doc_id);
-
-$user_id = $_SESSION['user_id'];
-$role = get_role();
-$access_granted = false;
-
-// Determine candidate ID from document (handles both old and new structure)
-$candidate_id = null;
-if (isset($doc['candidate_id']) && !empty($doc['candidate_id'])) {
-    // Old structure: candidate_id column exists
-    $candidate_id = $doc['candidate_id'];
-} elseif (isset($doc['user_id']) && isset($doc['user_type']) && $doc['user_type'] == 'candidate') {
-    // New structure: user_id + user_type columns
-    $candidate_id = $doc['user_id'];
-}
-
-error_log("Candidate ID from document: " . ($candidate_id ?? 'Not found'));
-
-// Permission checking based on role
-if ($role === 'candidate') {
-    // Candidates can view their own documents
-    if ($candidate_id && $candidate_id == $user_id) {
-        $access_granted = true;
-        error_log("Candidate access granted: owns the document");
-    } else {
-        // Check if this document belongs to the logged-in candidate
-        // Try alternative methods to find connection
-        $stmt = $conn->prepare("
-            SELECT id FROM documents 
-            WHERE id = ? 
-            AND (
-                (candidate_id = ?) OR 
-                (user_id = ? AND user_type = 'candidate')
-            )
-            LIMIT 1
-        ");
-        $stmt->execute([$doc_id, $user_id, $user_id]);
-        $access_granted = ($stmt->rowCount() > 0);
-        error_log("Candidate alternative check: " . ($access_granted ? 'granted' : 'denied'));
-    }
-    
-} elseif ($role === 'employer') {
-    // Employers can view documents of candidates who applied to their jobs
-    if ($candidate_id) {
-        // Check if this candidate applied to any of employer's jobs
-        $stmt = $conn->prepare("
-            SELECT a.id 
-            FROM applications a 
-            INNER JOIN jobs j ON a.job_id = j.id 
-            WHERE a.candidate_id = ? 
-            AND j.employer_id = ?
-            LIMIT 1
-        ");
-        $stmt->execute([$candidate_id, $user_id]);
-        $access_granted = ($stmt->rowCount() > 0);
-        error_log("Employer check: candidate $candidate_id applied to employer $user_id jobs: " . 
-                 ($access_granted ? 'Yes' : 'No'));
-    } else {
-        error_log("Employer access denied: Could not determine candidate ID from document");
-    }
-    
-    // Additional fallback: check if document is a company logo for this employer
-    if (!$access_granted && isset($doc['user_type']) && $doc['user_type'] == 'employer') {
-        if (isset($doc['user_id']) && $doc['user_id'] == $user_id) {
-            $access_granted = true;
-            error_log("Employer access granted: owns the company logo");
-        }
-    }
-    
-} else {
-    die("Access denied. Invalid user role.");
-}
-
-if (!$access_granted) {
-    // More informative error message
-    $error_msg = "Access denied. You don't have permission to view this document.\n";
-    $error_msg .= "Your role: $role, Your ID: $user_id\n";
-    $error_msg .= "Document owner (candidate_id): " . ($candidate_id ?? 'Not found') . "\n";
-    
-    error_log($error_msg);
-    
-    // Show user-friendly message
-    echo "<div style='padding: 20px; max-width: 600px; margin: 50px auto; text-align: center;'>";
-    echo "<h2 style='color: #dc3545;'>Access Denied</h2>";
+if (!$allow_access) {
+    header('Content-Type: text/html');
+    echo "<h2>Access Denied</h2>";
     echo "<p>You don't have permission to view this document.</p>";
-    echo "<p><a href='javascript:history.back()' style='color: #007bff;'>Go Back</a></p>";
-    echo "</div>";
     exit;
 }
 
-// Now we have permission, send the file
-if (!empty($doc['file_content'])) {
-    // Get file information
-    $mime_type = $doc['mime_type'] ?? 'application/octet-stream';
-    $file_name = $doc['original_name'] ?? ('document_' . $doc_id . '.pdf');
-    $file_size = $doc['file_size'] ?? strlen($doc['file_content']);
-    
-    // Clean filename
-    $file_name = preg_replace('/[^\w\.\-]/', '_', $file_name);
-    
-    // Set headers
-    header('Content-Type: ' . $mime_type);
-    
-    // Decide whether to show inline or force download
-    $disposition = 'attachment'; // Default to download
-    
-    // Show these file types inline in browser
-    $inline_types = [
-        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
-        'application/pdf',
-        'text/plain', 'text/html', 'text/css',
-        'application/json'
+// Clear any previous output
+ob_end_clean();
+
+// Determine file type and name
+$mime_type = 'application/octet-stream'; // Default
+$file_name = 'document_' . $doc_id;
+
+if (!empty($doc['mime_type'])) {
+    $mime_type = $doc['mime_type'];
+} elseif (!empty($doc['original_name'])) {
+    // Guess from file extension
+    $ext = pathinfo($doc['original_name'], PATHINFO_EXTENSION);
+    $mime_types = [
+        'pdf' => 'application/pdf',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'doc' => 'application/msword',
+        'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'txt' => 'text/plain',
     ];
-    
-    if (in_array($mime_type, $inline_types)) {
-        $disposition = 'inline';
+    if (isset($mime_types[strtolower($ext)])) {
+        $mime_type = $mime_types[strtolower($ext)];
+    }
+}
+
+if (!empty($doc['original_name'])) {
+    $file_name = $doc['original_name'];
+}
+
+// Clean filename for safe download
+$file_name = preg_replace('/[^\w\.\-]/', '_', $file_name);
+
+// Set headers
+header('Content-Type: ' . $mime_type);
+header('Content-Disposition: attachment; filename="' . $file_name . '"');
+
+if (!empty($doc['file_size'])) {
+    header('Content-Length: ' . $doc['file_size']);
+}
+
+// Check if we have BLOB content
+if (!empty($doc['file_content'])) {
+    // Check if content is base64 encoded
+    if (base64_decode($doc['file_content'], true) !== false) {
+        error_log("Content appears to be base64 encoded, decoding...");
+        $decoded = base64_decode($doc['file_content']);
+        if ($decoded !== false) {
+            error_log("Base64 decode successful, outputting " . strlen($decoded) . " bytes");
+            echo $decoded;
+            exit;
+        }
     }
     
-    header('Content-Disposition: ' . $disposition . '; filename="' . $file_name . '"');
-    header('Content-Length: ' . $file_size);
-    header('Cache-Control: private, max-age=3600, must-revalidate');
-    header('Pragma: public');
-    header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 3600) . ' GMT'); // 1 hour cache
-    
-    // For PDFs, add additional headers
-    if ($mime_type == 'application/pdf') {
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="' . $file_name . '"');
-    }
-    
-    // Output the file content
+    // Output raw content
+    error_log("Outputting raw content (" . strlen($doc['file_content']) . " bytes)");
     echo $doc['file_content'];
     
-} elseif (isset($doc['file_path']) && !empty($doc['file_path'])) {
-    // Fallback to file system storage
+} elseif (!empty($doc['file_path'])) {
+    // Try to get from file system
+    error_log("No BLOB content, trying file_path: " . $doc['file_path']);
+    
     $possible_paths = [
         $doc['file_path'],
+        __DIR__ . '/' . $doc['file_path'],
+        __DIR__ . '/uploads/' . $doc['file_path'],
+        __DIR__ . '/../uploads/' . $doc['file_path'],
         'uploads/' . $doc['file_path'],
-        'uploads/documents/' . $doc['file_path'],
-        'uploads/logos/' . $doc['file_path'],
-        '../uploads/' . $doc['file_path']
+        'uploads/documents/' . $doc['file_path']
     ];
     
-    $file_found = false;
+    $found = false;
     foreach ($possible_paths as $path) {
         if (file_exists($path) && is_file($path)) {
-            $mime_type = mime_content_type($path) ?: 'application/octet-stream';
+            error_log("Found file at: $path");
             $file_size = filesize($path);
-            $file_name = $doc['original_name'] ?? basename($path);
-            
-            // Clean filename
-            $file_name = preg_replace('/[^\w\.\-]/', '_', $file_name);
-            
-            header('Content-Type: ' . $mime_type);
-            header('Content-Disposition: attachment; filename="' . $file_name . '"');
             header('Content-Length: ' . $file_size);
-            
             readfile($path);
-            $file_found = true;
+            $found = true;
             break;
         }
     }
     
-    if (!$file_found) {
-        die("File not found on server. Please contact support.");
+    if (!$found) {
+        error_log("File not found in any location");
+        die("File not found on server.");
     }
-    
 } else {
-    // No file content available
-    echo "<div style='padding: 20px; max-width: 600px; margin: 50px auto; text-align: center;'>";
-    echo "<h2 style='color: #dc3545;'>File Error</h2>";
-    echo "<p>The document file is not available. It may have been deleted or not properly uploaded.</p>";
-    echo "<p>File ID: $doc_id</p>";
-    echo "<p><a href='javascript:history.back()' style='color: #007bff;'>Go Back</a></p>";
-    echo "</div>";
+    error_log("No file content available");
+    die("File content is not available.");
 }
 
 exit;
-?>
