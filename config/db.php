@@ -1,9 +1,9 @@
 <?php
 // Config: Database settings
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'webtech_2025A_fannareme_abdou');
+define('DB_NAME', 'mobileapps_2026B_fannareme_abdou');
 define('DB_USER', 'fannareme.abdou');
-define('DB_PASS', 'fa889033');
+define('DB_PASS', 'fa88903305');
 
 try {
     $conn = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
